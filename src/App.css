@@ -1,0 +1,390 @@
+/* Theme tokens — three modes, switched via [data-theme] on <html> (set by
+   ThemeContext, persisted to localStorage). Every panel consumes these
+   instead of hardcoding colours, so adding/adjusting a theme happens here
+   once rather than by hunting through every component's CSS. */
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
+
+  --body-bg: #0b1020;
+  --glass-bg: rgba(22, 24, 32, 0.58);
+  --glass-bg-strong: rgba(22, 24, 32, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.2);
+  /* Top edge catches light, bottom edge falls into shadow — this pairing is
+     what actually reads as "glass thickness" rather than a flat tinted box. */
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  /* Layered: a tight contact shadow + a soft diffuse one, the way real
+     elevated glass casts two shadows at once rather than one flat blur. */
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 10px 28px rgba(0, 0, 0, 0.4), 0 28px 56px -16px rgba(0, 0, 0, 0.45);
+  --glass-blur: blur(20px);
+  --glass-radius: 16px;
+  --glass-radius-sm: 10px;
+  --accent: 120, 170, 255;
+  --ease-glass: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --ui-fill: rgba(255, 255, 255, 0.07);
+  --ui-fill-hover: rgba(255, 255, 255, 0.15);
+  --ui-border: rgba(255, 255, 255, 0.14);
+  /* Only meaningful in "glass" mode, where the panel is near-transparent
+     and text needs to stay legible over whatever the map happens to show
+     underneath — none elsewhere, since a solid-enough panel bg already
+     guarantees contrast there. */
+  --panel-text-shadow: none;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --body-bg: #eef1f6;
+  --glass-bg: rgba(255, 255, 255, 0.64);
+  --glass-bg-strong: rgba(255, 255, 255, 0.84);
+  --glass-border: rgba(20, 25, 35, 0.12);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.75), inset 0 -1px 0 rgba(20, 25, 35, 0.05);
+  --glass-shadow: 0 1px 2px rgba(20, 25, 35, 0.08), 0 10px 26px rgba(20, 25, 35, 0.1), 0 24px 48px -16px rgba(20, 25, 35, 0.16);
+  --text-primary: rgba(15, 20, 30, 0.92);
+  --text-secondary: rgba(15, 20, 30, 0.62);
+  --text-muted: rgba(15, 20, 30, 0.38);
+  --ui-fill: rgba(15, 20, 30, 0.05);
+  --ui-fill-hover: rgba(15, 20, 30, 0.1);
+  --ui-border: rgba(15, 20, 30, 0.12);
+}
+
+/* "Liquid Glass" — much more transparent than the other two, with a subtle
+   SVG-driven edge warp (feTurbulence + feDisplacementMap, defined once in
+   App.tsx and referenced via backdrop-filter: url(#glass-distortion)) so
+   the backdrop visibly refracts through the panel rather than just blurring
+   flatly, similar to Apple's material. Text has nothing solid to sit on
+   here, so --panel-text-shadow carries the contrast instead. */
+:root[data-theme="glass"] {
+  color-scheme: dark;
+  --body-bg: #0b1020;
+  --glass-bg: rgba(255, 255, 255, 0.1);
+  --glass-bg-strong: rgba(255, 255, 255, 0.17);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 10px 24px rgba(0, 0, 0, 0.22), 0 26px 46px -16px rgba(0, 0, 0, 0.28);
+  --glass-blur: url(#glass-distortion) blur(11px) saturate(1.15);
+  --text-primary: #fff;
+  --text-secondary: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.55);
+  --ui-fill: rgba(255, 255, 255, 0.14);
+  --ui-fill-hover: rgba(255, 255, 255, 0.24);
+  --ui-border: rgba(255, 255, 255, 0.38);
+  --panel-text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+
+@keyframes glass-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* For elements that are already horizontally centered via a static
+   transform: translateX(-50%) — keyframes replace transform wholesale, so
+   the centering has to be baked into both ends here rather than reusing
+   plain glass-in, or the element snaps left after the animation ends. */
+/* A touch springier than glass-in — used for the three "reveal a panel"
+   interactions (Start route, Settings, Search results) so those specific
+   presses read as a deliberate, smooth pop rather than a flat fade. */
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(-4px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.015) translateY(0);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Mirrors pop-in for closing — applied via the .closing modifier that
+   useExitTransition's `closing` flag drives, so these panels shrink/fade
+   out instead of just vanishing when React would otherwise unmount them
+   instantly. */
+@keyframes pop-out {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.94) translateY(-4px);
+  }
+}
+
+@keyframes glass-in-center {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--body-bg);
+}
+
+.app-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Soft colour behind the glass panels — this is what the frosted blur
+   actually has something to refract. Sits above the map, below every panel
+   (z-index 1 vs panels' 10+), ignores pointer events, and drifts very
+   slowly so it reads as alive without drawing attention to itself. */
+.glow-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.glow-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  /* Plain alpha blending, not a blend mode — "screen"/"overlay" etc. can
+     only brighten and blow out to near-white over the map's lighter tiles
+     (land, snow, satellite highlights), which isn't a fixed dark backdrop
+     like a typical glassmorphism page. Flat low-opacity colour stays a
+     believable subtle tint over both light and dark map areas. */
+  opacity: 0.16;
+  will-change: transform;
+}
+
+.glow-blob--1 {
+  top: -120px;
+  left: -80px;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, #5b8cff 0%, transparent 70%);
+  animation: glow-drift-1 26s ease-in-out infinite;
+}
+
+.glow-blob--2 {
+  top: 40px;
+  right: -140px;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, #a855f7 0%, transparent 70%);
+  animation: glow-drift-2 32s ease-in-out infinite;
+}
+
+.glow-blob--3 {
+  bottom: -160px;
+  left: 30%;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, #22d3c9 0%, transparent 70%);
+  animation: glow-drift-3 38s ease-in-out infinite;
+}
+
+.glow-blob--4 {
+  bottom: 10%;
+  right: 10%;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, #fb923c 0%, transparent 70%);
+  opacity: 0.12;
+  animation: glow-drift-1 30s ease-in-out infinite reverse;
+}
+
+@media (max-width: 640px) {
+  .glow-blob {
+    opacity: 0.1;
+    filter: blur(50px);
+  }
+
+  .glow-blob--1,
+  .glow-blob--2 {
+    width: 260px;
+    height: 260px;
+  }
+
+  .glow-blob--3 {
+    width: 300px;
+    height: 300px;
+  }
+
+  .glow-blob--4 {
+    width: 200px;
+    height: 200px;
+  }
+}
+
+@keyframes glow-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, 30px) scale(1.08); }
+}
+
+@keyframes glow-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-50px, 40px) scale(0.95); }
+}
+
+@keyframes glow-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, -40px) scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-blob {
+    animation: none;
+  }
+}
+
+.right-controls {
+  position: absolute;
+  top: 100px;
+  right: 10px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  /* No overflow/max-height here on purpose — clipping this container also
+     clips every child panel's box-shadow bleed, which reads as the shadow
+     being "cut off" at the container's edge. Desktop viewports have room
+     for the full stack, so leave it unclipped; the scroll fallback below
+     is mobile-only, where the shorter viewport actually needs it and a
+     bit of shadow clipping is the lesser problem. */
+}
+
+@media (max-width: 640px) {
+  .right-controls {
+    top: 84px;
+    right: 8px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ui-fill-hover) transparent;
+    gap: 8px;
+  }
+
+  .right-controls::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .right-controls::-webkit-scrollbar-thumb {
+    background: var(--ui-fill-hover);
+    border-radius: 3px;
+  }
+
+  .search-bar {
+    top: 10px;
+    left: 8px;
+    width: calc(100vw - 16px);
+  }
+
+  .place-info-panel {
+    top: 68px;
+    left: 8px;
+    width: calc(100vw - 16px);
+  }
+
+  .route-stats-panel {
+    bottom: 8px;
+    width: calc(100vw - 16px);
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .route-stats-panel__row {
+    gap: 12px;
+  }
+
+  .elevation-hud {
+    bottom: 40px;
+    left: 8px;
+  }
+
+  .version-badge {
+    bottom: 8px;
+    left: 8px;
+  }
+}
+
+/* Temporary Phase 3 verification aid — replaced by the place-info panel later. */
+.elevation-hud {
+  position: absolute;
+  bottom: 52px;
+  left: 16px;
+  z-index: 10;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-badge {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 10;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* MapLibre's compact attribution control shows its full text list by
+   default on any viewport wide enough, native <details>/<summary> "open"
+   state notwithstanding — this keys the CSS to that state explicitly so it
+   starts collapsed to just the small "i" button, expanding on click same
+   as the native element already supports. */
+.gpx-notice {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  padding: 8px 16px;
+  border-radius: var(--glass-radius-sm);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.85em;
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  animation: glass-in-center 0.2s var(--ease-glass);
+}

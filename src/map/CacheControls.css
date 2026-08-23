@@ -1,0 +1,24 @@
+.cache-controls__clear {
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 4px 10px;
+  font-size: 0.9em;
+  font-family: inherit;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.cache-controls__clear:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+  transform: translateY(-1px);
+}
+
+.cache-controls__clear:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.cache-controls__clear:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}

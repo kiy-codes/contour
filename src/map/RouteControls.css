@@ -1,0 +1,109 @@
+/* Overrides .terrain-controls's plain glass-in — this is the panel that
+   appears the moment "Start route" is pressed, so it gets the springier
+   reveal to make that specific press read as smooth/deliberate. */
+.route-controls {
+  animation: pop-in 0.32s var(--ease-glass);
+}
+
+.route-controls--closing {
+  animation: pop-out 0.22s var(--ease-glass) forwards;
+  pointer-events: none;
+}
+
+.route-controls__start {
+  border-radius: 8px;
+  border: 1px solid rgba(120, 170, 255, 0.6);
+  /* Solid enough to stay readable under white text regardless of theme —
+     a low-alpha tint (like the other accent states use) washes out to a
+     pale, low-contrast blue over a light backdrop in light mode. */
+  background: rgba(70, 130, 240, 0.75);
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.85em;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.route-controls__start:hover {
+  background: rgba(70, 130, 240, 0.9);
+  transform: translateY(-1px);
+}
+
+.route-controls__start:active {
+  transform: scale(0.97);
+}
+
+.route-controls__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.route-controls__mode {
+  flex: 1 1 auto;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.78em;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: var(--ui-fill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.route-controls__mode:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.route-controls__mode:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+  transform: translateY(-1px);
+}
+
+.route-controls__mode--active {
+  background: rgba(70, 130, 240, 0.75);
+  border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+}
+
+.route-controls__mode:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.route-controls__row {
+  display: flex;
+  gap: 6px;
+}
+
+.route-controls__row button {
+  flex: 1;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  font-size: 0.78em;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.route-controls__row button:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+  transform: translateY(-1px);
+}
+
+.route-controls__row button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.route-controls__row button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}

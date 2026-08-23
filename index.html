@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contour</title>
+    <!-- Warms the DNS/TLS handshake for each tile host before the first
+         real request, shaving that latency off first contact each
+         session (cached responses on later visits skip the network
+         entirely, so this mainly helps the very first fetch to each). -->
+    <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+    <link rel="preconnect" href="https://s3.amazonaws.com" crossorigin />
+    <link rel="preconnect" href="https://ibasemaps-api.arcgis.com" crossorigin />
+    <link rel="preconnect" href="https://tiles.openskimap.org" crossorigin />
+    <link rel="preconnect" href="https://a.tile.opentopomap.org" crossorigin />
+    <link rel="preconnect" href="https://tile.waymarkedtrails.org" crossorigin />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

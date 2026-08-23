@@ -1,0 +1,46 @@
+.terrain-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--glass-radius-sm);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.8em;
+  min-width: 170px;
+  animation: glass-in 0.22s var(--ease-glass);
+  transition: background-color 0.2s var(--ease-glass);
+}
+
+.terrain-controls__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.terrain-controls__row--slider {
+  cursor: default;
+}
+
+.terrain-controls__row--slider input[type="range"] {
+  flex: 1;
+  accent-color: #78aaff;
+}
+
+.terrain-controls__row:not(.terrain-controls__row--slider):active {
+  transform: scale(0.98);
+}
+
+.terrain-controls__value {
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2em;
+  text-align: right;
+  opacity: 0.85;
+}

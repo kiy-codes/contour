@@ -1,0 +1,73 @@
+.place-info-panel {
+  position: absolute;
+  top: 78px;
+  left: 16px;
+  z-index: 15;
+  width: min(320px, calc(100vw - 32px));
+  padding: 16px 18px;
+  border-radius: var(--glass-radius);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  animation: pop-in 0.32s var(--ease-glass);
+}
+
+.place-info-panel__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--ui-fill);
+  color: var(--text-secondary);
+  font-size: 1.1em;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.place-info-panel__close:hover {
+  background: var(--ui-fill-hover);
+  transform: scale(1.1);
+}
+
+.place-info-panel__close:active {
+  transform: scale(0.9);
+}
+
+.place-info-panel__type {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.place-info-panel__name {
+  margin: 2px 28px 12px 0;
+  font-size: 1.25em;
+  font-weight: 600;
+}
+
+.place-info-panel__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.85em;
+}
+
+.place-info-panel__facts dt {
+  color: var(--text-secondary);
+}
+
+.place-info-panel__facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}

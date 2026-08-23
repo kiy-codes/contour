@@ -1,0 +1,355 @@
+import { useEffect, useReducer, useRef, useState } from "react";
+import MapCanvas, { type MapCanvasHandle } from "./map/MapCanvas";
+import MapModeSwitcher from "./map/MapModeSwitcher";
+import TerrainControls from "./map/TerrainControls";
+import OutdoorControls from "./map/OutdoorControls";
+import SkiControls from "./map/SkiControls";
+import RouteControls from "./map/RouteControls";
+import RouteStatsPanel from "./map/RouteStatsPanel";
+import CacheControls from "./map/CacheControls";
+import SearchBar from "./map/SearchBar";
+import PlaceInfoPanel from "./map/PlaceInfoPanel";
+import SkiInfoPanel, { type SkiInfoTarget } from "./map/SkiInfoPanel";
+import SettingsMenu from "./map/SettingsMenu";
+import GlassDistortionFilter from "./theme/GlassDistortionFilter";
+import { CompositeGeocodingProvider, type SearchResult } from "./providers/GeocodingProvider";
+import type { SkiLift, SkiRun } from "./providers/SkiDataProvider";
+import type { RouteResult } from "./providers/RoutingProvider";
+import type { LngLat, MapStyleMode } from "./providers/types";
+import { pathLength, boundsOf } from "./geo/distance";
+import { routeReducer, initialRouteEditorState } from "./routing/routeReducer";
+import { computeElevationProfile, type ProfilePoint, type ProfileStats } from "./routing/elevationProfile";
+import { estimateHikingDurationSeconds } from "./routing/timeEstimate";
+import { buildGpxXml, suggestGpxFilename } from "./gpx/gpxExport";
+import { parseGpx } from "./gpx/gpxImport";
+import { saveGpxFile, openGpxFile } from "./gpx/gpxFileIO";
+import "./App.css";
+
+const geocodingProvider = new CompositeGeocodingProvider();
+const hasOrs = Boolean(import.meta.env.VITE_ORS_API_KEY);
+const hasEsri = Boolean(import.meta.env.VITE_ESRI_API_KEY);
+
+const ZOOM_BY_TYPE: Record<SearchResult["type"], number> = {
+  country: 5,
+  region: 7,
+  city: 11,
+  town: 12,
+  village: 13,
+  street: 15,
+  address: 16,
+  peak: 13,
+  lake: 12,
+  poi: 14,
+  other: 12,
+};
+
+const EMPTY_PROFILE_STATS: ProfileStats = {
+  profile: [],
+  computedAscentMeters: 0,
+  computedDescentMeters: 0,
+  maxSlopePercent: 0,
+  avgSlopePercent: 0,
+  hasElevationData: false,
+};
+
+function App() {
+  const mapHandle = useRef<MapCanvasHandle>(null);
+  const [mode, setMode] = useState<MapStyleMode>("standard");
+  const [terrainEnabled, setTerrainEnabled] = useState(false);
+  const [exaggeration, setExaggeration] = useState(1.5);
+  const [contoursEnabled, setContoursEnabled] = useState(false);
+  const [hikingTrailsEnabled, setHikingTrailsEnabled] = useState(false);
+  const [longDistanceTrailsEnabled, setLongDistanceTrailsEnabled] = useState(false);
+  const [trailNamesEnabled, setTrailNamesEnabled] = useState(false);
+  const [skiRunsEnabled, setSkiRunsEnabled] = useState(false);
+  const [skiDifficultyColoursEnabled, setSkiDifficultyColoursEnabled] = useState(true);
+  const [skiLiftsEnabled, setSkiLiftsEnabled] = useState(false);
+  const [skiRunNamesEnabled, setSkiRunNamesEnabled] = useState(false);
+  const [skiLiftNamesEnabled, setSkiLiftNamesEnabled] = useState(false);
+  const [hoverElevation, setHoverElevation] = useState<number | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<SearchResult | null>(null);
+  const [placeElevation, setPlaceElevation] = useState<number | null | "loading">(null);
+  const [skiTarget, setSkiTarget] = useState<SkiInfoTarget | null>(null);
+  const [routeState, routeDispatch] = useReducer(routeReducer, initialRouteEditorState);
+  const [routeResult, setRouteResult] = useState<RouteResult | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [profileStats, setProfileStats] = useState<ProfileStats>(EMPTY_PROFILE_STATS);
+  const [importedRoute, setImportedRoute] = useState<RouteResult | null>(null);
+  const [importedRouteName, setImportedRouteName] = useState<string>("Route");
+  const [gpxNotice, setGpxNotice] = useState<string | null>(null);
+
+  // Whichever route is actually on screen right now — an imported track
+  // takes precedence over an in-progress computed route.
+  const activeResult = importedRoute ?? routeResult;
+
+  const handleElevationHover = (elevation: number | null, _point: LngLat) => {
+    setHoverElevation(elevation);
+  };
+
+  const handleSelectResult = async (result: SearchResult) => {
+    setSkiTarget(null);
+    mapHandle.current?.flyToResult(result.center, result.bbox, ZOOM_BY_TYPE[result.type]);
+    setSelectedPlace(result);
+    setPlaceElevation("loading");
+    const elevationProvider = mapHandle.current?.getElevationProvider();
+    const elevation = elevationProvider ? await elevationProvider.getElevation(result.center) : null;
+    setPlaceElevation(elevation);
+  };
+
+  const handleSkiRunClick = async (run: SkiRun) => {
+    setSelectedPlace(null);
+    const lengthMeters = pathLength(run.geometry);
+    setSkiTarget({ kind: "run", run: { ...run, lengthMeters } });
+    const elevationProvider = mapHandle.current?.getElevationProvider();
+    if (!elevationProvider || run.geometry.length === 0) return;
+    const [startElevation, endElevation] = await Promise.all([
+      elevationProvider.getElevation(run.geometry[0]),
+      elevationProvider.getElevation(run.geometry[run.geometry.length - 1]),
+    ]);
+    setSkiTarget({ kind: "run", run: { ...run, lengthMeters, startElevation, endElevation } });
+  };
+
+  const handleSkiLiftClick = async (lift: SkiLift) => {
+    setSelectedPlace(null);
+    setSkiTarget({ kind: "lift", lift });
+    const elevationProvider = mapHandle.current?.getElevationProvider();
+    if (!elevationProvider || lift.geometry.length === 0) return;
+    const [startElevation, endElevation] = await Promise.all([
+      elevationProvider.getElevation(lift.geometry[0]),
+      elevationProvider.getElevation(lift.geometry[lift.geometry.length - 1]),
+    ]);
+    setSkiTarget({ kind: "lift", lift: { ...lift, startElevation, endElevation } });
+  };
+
+  const handleRouteComputed = (result: RouteResult | null, error: string | null) => {
+    setRouteResult(result);
+    setRouteError(error);
+  };
+
+  // Build the elevation profile (and, for manual/imported routes with no
+  // ORS-supplied ascent/descent, the noise-filtered gain/loss + slope stats)
+  // whenever the on-screen route changes.
+  useEffect(() => {
+    if (!activeResult) {
+      setProfileStats(EMPTY_PROFILE_STATS);
+      return;
+    }
+    let cancelled = false;
+    const elevationProvider = mapHandle.current?.getElevationProvider();
+    if (!elevationProvider) return;
+    computeElevationProfile(activeResult, elevationProvider).then((stats) => {
+      if (!cancelled) setProfileStats(stats);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeResult]);
+
+  const handleProfileHover = (point: ProfilePoint | null) => {
+    mapHandle.current?.showHoverMarker(point ? { lng: point.lng, lat: point.lat } : null);
+  };
+
+  useEffect(() => {
+    if (!gpxNotice) return;
+    const timer = setTimeout(() => setGpxNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [gpxNotice]);
+
+  // Hiking trails are the whole point of route editing, so switch them on
+  // automatically while editing — but only restore them to off on finish if
+  // they were actually off beforehand; if the user already had them on (or
+  // turned them on/off themselves mid-edit), finishing leaves that alone.
+  const hikingTrailsWasOffRef = useRef(false);
+  const handleStartRoute = () => {
+    hikingTrailsWasOffRef.current = !hikingTrailsEnabled;
+    if (!hikingTrailsEnabled) setHikingTrailsEnabled(true);
+    routeDispatch({ type: "START_EDITING" });
+  };
+  const handleFinishRoute = () => {
+    if (hikingTrailsWasOffRef.current) setHikingTrailsEnabled(false);
+    routeDispatch({ type: "STOP_EDITING" });
+  };
+
+  // Prefer ORS's own ascent/descent/duration (more authoritative) and fall
+  // back to what we derived from the DEM-sampled profile for manual/imported
+  // routes that don't already carry it.
+  const ascentMeters = activeResult?.ascentMeters ?? (profileStats.hasElevationData ? profileStats.computedAscentMeters : undefined);
+  const descentMeters = activeResult?.descentMeters ?? (profileStats.hasElevationData ? profileStats.computedDescentMeters : undefined);
+  const isDurationEstimated = activeResult?.durationSeconds === undefined;
+  const durationSeconds =
+    activeResult?.durationSeconds ??
+    (activeResult && ascentMeters !== undefined ? estimateHikingDurationSeconds(activeResult.distanceMeters, ascentMeters) : undefined);
+
+  const handleImportGpx = async () => {
+    setGpxNotice(null);
+    let xml: string | null;
+    try {
+      xml = await openGpxFile();
+    } catch (err) {
+      setGpxNotice(`Could not open file: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    if (xml === null) return; // user cancelled
+
+    try {
+      const parsed = parseGpx(xml);
+      routeDispatch({ type: "CLEAR" });
+      routeDispatch({ type: "STOP_EDITING" });
+      setRouteResult(null);
+      setRouteError(null);
+      setImportedRouteName(parsed.name ?? "Imported route");
+      setImportedRoute({
+        points: parsed.points,
+        distanceMeters: pathLength(parsed.points),
+      });
+      const bounds = boundsOf(parsed.points);
+      if (bounds) mapHandle.current?.flyToResult(parsed.points[0], bounds);
+    } catch (err) {
+      setGpxNotice(`Could not read GPX file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleReturnToRoute = () => {
+    if (!activeResult || activeResult.points.length === 0) return;
+    const bounds = boundsOf(activeResult.points);
+    if (bounds) mapHandle.current?.flyToResult(activeResult.points[0], bounds);
+  };
+
+  const handleExportGpx = async () => {
+    if (!activeResult) return;
+    setGpxNotice(null);
+    const routeName = importedRoute ? importedRouteName : "Route";
+    const xml = buildGpxXml({
+      routeName,
+      trackPoints: activeResult.points,
+      waypoints: routeState.waypoints.map((point, i) => ({
+        point,
+        name: i === 0 ? "Start" : i === routeState.waypoints.length - 1 ? "Finish" : `Waypoint ${i + 1}`,
+      })),
+    });
+    const filename = suggestGpxFilename(routeName, activeResult.distanceMeters);
+    try {
+      const saved = await saveGpxFile(xml, filename);
+      if (saved) setGpxNotice(`Saved ${filename}`);
+    } catch (err) {
+      setGpxNotice(`Could not save file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleClearRoute = () => {
+    routeDispatch({ type: "CLEAR" });
+    setRouteResult(null);
+    setRouteError(null);
+    setImportedRoute(null);
+  };
+
+  return (
+    <main className="app-root">
+      <GlassDistortionFilter />
+      <MapCanvas
+        ref={mapHandle}
+        mode={mode}
+        terrainEnabled={terrainEnabled}
+        terrainExaggeration={exaggeration}
+        contoursEnabled={contoursEnabled}
+        hikingTrailsEnabled={hikingTrailsEnabled}
+        longDistanceTrailsEnabled={longDistanceTrailsEnabled}
+        trailNamesEnabled={trailNamesEnabled}
+        skiRunsEnabled={skiRunsEnabled}
+        skiDifficultyColoursEnabled={skiDifficultyColoursEnabled}
+        skiLiftsEnabled={skiLiftsEnabled}
+        skiRunNamesEnabled={skiRunNamesEnabled}
+        skiLiftNamesEnabled={skiLiftNamesEnabled}
+        routeState={routeState}
+        routeDispatch={routeDispatch}
+        importedRoute={importedRoute}
+        onElevationHover={handleElevationHover}
+        onSkiRunClick={handleSkiRunClick}
+        onSkiLiftClick={handleSkiLiftClick}
+        onRouteComputed={handleRouteComputed}
+      />
+      <div className="glow-layer" aria-hidden="true">
+        <div className="glow-blob glow-blob--1" />
+        <div className="glow-blob glow-blob--2" />
+        <div className="glow-blob glow-blob--3" />
+        <div className="glow-blob glow-blob--4" />
+      </div>
+      <SearchBar provider={geocodingProvider} onSelect={handleSelectResult} />
+      {selectedPlace && (
+        <PlaceInfoPanel place={selectedPlace} elevation={placeElevation} onClose={() => setSelectedPlace(null)} />
+      )}
+      {skiTarget && <SkiInfoPanel target={skiTarget} onClose={() => setSkiTarget(null)} />}
+      <div className="right-controls">
+        <SettingsMenu />
+        <MapModeSwitcher mode={mode} onChange={setMode} hasEsri={hasEsri} />
+        <TerrainControls
+          terrainEnabled={terrainEnabled}
+          onTerrainEnabledChange={setTerrainEnabled}
+          exaggeration={exaggeration}
+          onExaggerationChange={setExaggeration}
+          contoursEnabled={contoursEnabled}
+          onContoursEnabledChange={setContoursEnabled}
+        />
+        <OutdoorControls
+          hikingTrailsEnabled={hikingTrailsEnabled}
+          onHikingTrailsEnabledChange={setHikingTrailsEnabled}
+          longDistanceTrailsEnabled={longDistanceTrailsEnabled}
+          onLongDistanceTrailsEnabledChange={setLongDistanceTrailsEnabled}
+          trailNamesEnabled={trailNamesEnabled}
+          onTrailNamesEnabledChange={setTrailNamesEnabled}
+        />
+        <SkiControls
+          runsEnabled={skiRunsEnabled}
+          onRunsEnabledChange={setSkiRunsEnabled}
+          difficultyColoursEnabled={skiDifficultyColoursEnabled}
+          onDifficultyColoursEnabledChange={setSkiDifficultyColoursEnabled}
+          liftsEnabled={skiLiftsEnabled}
+          onLiftsEnabledChange={setSkiLiftsEnabled}
+          runNamesEnabled={skiRunNamesEnabled}
+          onRunNamesEnabledChange={setSkiRunNamesEnabled}
+          liftNamesEnabled={skiLiftNamesEnabled}
+          onLiftNamesEnabledChange={setSkiLiftNamesEnabled}
+        />
+        <RouteControls
+          isEditing={routeState.isEditing}
+          hasWaypoints={routeState.waypoints.length > 0}
+          hasImportedRoute={importedRoute !== null}
+          mode={routeState.mode}
+          hasOrs={hasOrs}
+          canUndo={routeState.past.length > 0}
+          canRedo={routeState.future.length > 0}
+          onStart={handleStartRoute}
+          onFinish={handleFinishRoute}
+          onClear={handleClearRoute}
+          onImportGpx={handleImportGpx}
+          onExportGpx={handleExportGpx}
+          onUndo={() => routeDispatch({ type: "UNDO" })}
+          onRedo={() => routeDispatch({ type: "REDO" })}
+          onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
+        />
+        <CacheControls />
+      </div>
+      {terrainEnabled && (
+        <div className="elevation-hud">{hoverElevation !== null ? `Elevation: ${Math.round(hoverElevation)} m` : "Elevation: —"}</div>
+      )}
+      <div className="version-badge">v1</div>
+      {gpxNotice && <div className="gpx-notice">{gpxNotice}</div>}
+      <RouteStatsPanel
+        result={activeResult}
+        error={importedRoute ? null : routeError}
+        waypointCount={routeState.waypoints.length}
+        profile={profileStats.profile}
+        ascentMeters={ascentMeters}
+        descentMeters={descentMeters}
+        maxSlopePercent={profileStats.hasElevationData ? profileStats.maxSlopePercent : undefined}
+        avgSlopePercent={profileStats.hasElevationData ? profileStats.avgSlopePercent : undefined}
+        durationSeconds={durationSeconds}
+        isDurationEstimated={isDurationEstimated}
+        onProfileHover={handleProfileHover}
+        onReturnToRoute={handleReturnToRoute}
+      />
+    </main>
+  );
+}
+
+export default App;

@@ -1,0 +1,53 @@
+.mode-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--glass-radius-sm);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  animation: glass-in 0.22s var(--ease-glass);
+  text-shadow: var(--panel-text-shadow);
+}
+
+.mode-switcher__btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.8em;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s var(--ease-glass), color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+  white-space: nowrap;
+}
+
+.mode-switcher__btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.mode-switcher__btn:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+  transform: translateX(2px);
+}
+
+.mode-switcher__btn--active {
+  /* Solid enough that white text stays legible over both a dark and a
+     light theme's panel backdrop — a low-alpha tint reveals too much of
+     whatever's behind it in light mode and washes out. */
+  background: rgba(70, 130, 240, 0.75);
+  color: #fff;
+  border-color: rgba(120, 170, 255, 0.6);
+}
+
+.mode-switcher__btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
