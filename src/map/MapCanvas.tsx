@@ -9,7 +9,13 @@ import { OsmTransportationOutdoorProvider } from "../providers/OutdoorDataProvid
 import { OpenSkiMapProvider, type SkiLift, type SkiRun } from "../providers/SkiDataProvider";
 import { EsriWorldImageryProvider } from "../providers/SatelliteProvider";
 import { OpenTopoMapProvider } from "../providers/TopoProvider";
-import { CompositeRoutingProvider, type RouteResult } from "../providers/RoutingProvider";
+import {
+  CompositeRoutingProvider,
+  type RouteResult,
+  type RoutingMode,
+  type RouteConstraints,
+  type RoundTripOptions,
+} from "../providers/RoutingProvider";
 import type { LngLat, MapStyleMode } from "../providers/types";
 import { useContours } from "../terrain/useContours";
 import { useOutdoorLayers } from "../outdoor/useOutdoorLayers";
@@ -19,7 +25,15 @@ import type { RouteAction, RouteEditorState } from "../routing/routeReducer";
 import type { Dispatch } from "react";
 import { registerTileCacheProtocol, withCacheScheme, CACHE_SCHEME } from "../cache/tileCacheProtocol";
 import type { Bbox } from "../offline/regionTiles";
-import { circleRing } from "../geo/distance";
+import { circleRing, pathLength } from "../geo/distance";
+import { polygonAreaSqMeters } from "../geo/area";
+import type { WeatherMapLayerId } from "../providers/WeatherProvider";
+import { weatherMapProvider } from "../providers/weatherInstances";
+import { useWeatherMapLayer, type WeatherTileStatus } from "../weather/useWeatherMapLayer";
+import type { AvalancheRegionFeature } from "../providers/AvalancheProvider";
+import { avalancheProvider } from "../providers/avalancheInstances";
+import { useAvalancheLayer, type AvalancheStatus } from "../avalanche/useAvalancheLayer";
+import { useGraticule } from "./useGraticule";
 
 registerTileCacheProtocol();
 
@@ -29,6 +43,7 @@ const outdoorProvider = new OsmTransportationOutdoorProvider();
 const skiProvider = new OpenSkiMapProvider();
 const satelliteProvider = new EsriWorldImageryProvider();
 const esriApiKey = import.meta.env.VITE_ESRI_API_KEY as string | undefined;
+const owmApiKey = import.meta.env.VITE_OWM_API_KEY as string | undefined;
 const topoProvider = new OpenTopoMapProvider();
 const routingProvider = new CompositeRoutingProvider(import.meta.env.VITE_ORS_API_KEY as string | undefined);
 
@@ -43,6 +58,7 @@ const TOPO_SOURCE_ID = "topo-source";
 const TOPO_LAYER_ID = "topo-layer";
 const USER_LOCATION_ACCURACY_SOURCE_ID = "user-location-accuracy";
 const USER_LOCATION_ACCURACY_LAYER_ID = "user-location-accuracy-layer";
+const EMPTY_FEATURE_COLLECTION: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export interface MapCanvasHandle {
   flyTo(target: LngLat, opts?: { zoom?: number; pitch?: number; bearing?: number }): void;
@@ -62,6 +78,20 @@ export interface MapCanvasHandle {
    * useGeolocation.ts). Entirely separate from showHoverMarker and from
    * route waypoints — its own marker instance and its own map source. */
   showUserLocationMarker(fix: { point: LngLat; accuracy: number } | null): void;
+  /** Current map center, or null before the map has finished loading. */
+  getCenter(): LngLat | null;
+  /** Forces a fresh avalanche.org fetch, bypassing the in-memory cache. */
+  refreshAvalanche(): void;
+  /** Whether ORS round-trip/loop generation is available (needs VITE_ORS_API_KEY). */
+  hasRoundTrip(): boolean;
+  /** One-shot route computations for the smart route planner — distinct
+   * from useRouteLayer's waypoint-editing-driven routing, which stays
+   * entirely separate so manual route drawing is unaffected. */
+  planRoundTrip(start: LngLat, opts: RoundTripOptions, mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult>;
+  planRoute(waypoints: LngLat[], mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult>;
+  /** Removes all points from the current measurement without changing
+   * measureMode — the tool stays armed for a fresh measurement. */
+  clearMeasurement(): void;
 }
 
 export interface MapCanvasProps {
@@ -91,6 +121,29 @@ export interface MapCanvasProps {
    * false or the component unmounts. */
   regionDrawEnabled?: boolean;
   onRegionDrawn?: (bbox: Bbox) => void;
+  /** Which OpenWeatherMap raster layer to show, if any — "none" hides the
+   * overlay entirely (see WeatherControls/useWeatherMapLayer). */
+  weatherMapLayer?: WeatherMapLayerId | "none";
+  /** Fires after panning/zooming settles — used to drive the weather
+   * forecast panel's "for the visible area" point without fetching on
+   * every animation frame. */
+  onMoveEnd?: (center: LngLat) => void;
+  onWeatherTileStatusChange?: (status: WeatherTileStatus, lastRefreshedAt: number | null) => void;
+  avalancheEnabled?: boolean;
+  onAvalancheSelect?: (feature: AvalancheRegionFeature) => void;
+  onAvalancheStatusChange?: (status: AvalancheStatus, error: string | null, regionCount: number, fetchedAt: number | null) => void;
+  /** When true, the next map click is captured as a point pick (route
+   * planner "end point") instead of any other click behaviour, then
+   * auto-disables — a lighter-weight one-shot version of regionDrawEnabled. */
+  pickPointEnabled?: boolean;
+  onPointPicked?: (point: LngLat) => void;
+  /** "off" leaves the map untouched; "distance"/"area" arm click-to-add-
+   * point measuring (see MeasureTool). Independent of pickPointEnabled and
+   * regionDrawEnabled — the app only ever has one of these active at once,
+   * but MapCanvas doesn't need to know that. */
+  measureMode?: "off" | "distance" | "area";
+  onMeasureUpdate?: (points: LngLat[], totalMeters: number, areaSqMeters: number | null) => void;
+  gridEnabled?: boolean;
 }
 
 function addTerrainLayers(map: MapLibreMap) {
@@ -192,6 +245,17 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       onRouteComputed,
       regionDrawEnabled = false,
       onRegionDrawn,
+      weatherMapLayer = "none",
+      onMoveEnd,
+      onWeatherTileStatusChange,
+      avalancheEnabled = false,
+      onAvalancheSelect,
+      onAvalancheStatusChange,
+      pickPointEnabled = false,
+      onPointPicked,
+      measureMode = "off",
+      onMeasureUpdate,
+      gridEnabled = false,
     },
     ref,
   ) => {
@@ -201,8 +265,11 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
     const elevationProviderRef = useRef(new MapLibreElevationProvider(() => mapRef.current));
     const onElevationHoverRef = useRef(onElevationHover);
     onElevationHoverRef.current = onElevationHover;
+    const onMoveEndRef = useRef(onMoveEnd);
+    onMoveEndRef.current = onMoveEnd;
     const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
     const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
+    const clearMeasurementRef = useRef<(() => void) | null>(null);
 
     useImperativeHandle(ref, () => ({
       flyTo(target, opts) {
@@ -263,6 +330,27 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       },
       getMap() {
         return mapRef.current;
+      },
+      getCenter() {
+        const map = mapRef.current;
+        if (!map) return null;
+        const c = map.getCenter();
+        return { lng: c.lng, lat: c.lat };
+      },
+      refreshAvalanche() {
+        avalancheRefreshRef.current?.();
+      },
+      hasRoundTrip() {
+        return routingProvider.hasRoundTrip;
+      },
+      planRoundTrip(start, opts, mode, constraints) {
+        return routingProvider.roundTrip(start, opts, mode, constraints);
+      },
+      planRoute(waypoints, mode, constraints) {
+        return routingProvider.route(waypoints, mode, constraints);
+      },
+      clearMeasurement() {
+        clearMeasurementRef.current?.();
       },
       getElevationProvider() {
         return elevationProviderRef.current;
@@ -343,6 +431,36 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       },
     }));
 
+    const { status: weatherTileStatus, lastRefreshedAt: weatherLastRefreshedAt } = useWeatherMapLayer(
+      mapReady,
+      weatherMapProvider,
+      weatherMapLayer,
+      owmApiKey,
+    );
+    const onWeatherTileStatusChangeRef = useRef(onWeatherTileStatusChange);
+    onWeatherTileStatusChangeRef.current = onWeatherTileStatusChange;
+    useEffect(() => {
+      onWeatherTileStatusChangeRef.current?.(weatherTileStatus, weatherLastRefreshedAt);
+    }, [weatherTileStatus, weatherLastRefreshedAt]);
+
+    const onAvalancheSelectRef = useRef(onAvalancheSelect);
+    onAvalancheSelectRef.current = onAvalancheSelect;
+    const {
+      status: avalancheStatus,
+      error: avalancheError,
+      regionCount: avalancheRegionCount,
+      fetchedAt: avalancheFetchedAt,
+      refresh: avalancheRefresh,
+    } = useAvalancheLayer(mapReady, avalancheProvider, avalancheEnabled, (feature) => onAvalancheSelectRef.current?.(feature));
+    const avalancheRefreshRef = useRef(avalancheRefresh);
+    avalancheRefreshRef.current = avalancheRefresh;
+    const onAvalancheStatusChangeRef = useRef(onAvalancheStatusChange);
+    onAvalancheStatusChangeRef.current = onAvalancheStatusChange;
+    useEffect(() => {
+      onAvalancheStatusChangeRef.current?.(avalancheStatus, avalancheError, avalancheRegionCount, avalancheFetchedAt);
+    }, [avalancheStatus, avalancheError, avalancheRegionCount, avalancheFetchedAt]);
+
+    useGraticule(mapReady, gridEnabled);
     useContours(mapReady, contoursEnabled, terrainProvider);
     useOutdoorLayers(mapReady, outdoorProvider, {
       hikingTrailsEnabled,
@@ -428,6 +546,12 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           addSatelliteLayer(map);
           addTopoLayer(map);
           setMapReady(map);
+          // moveend only fires after a subsequent pan/zoom — fire once here
+          // too so anything driven off the map center (weather forecast
+          // panel) has an initial point without requiring the user to touch
+          // the map first.
+          const c = map.getCenter();
+          onMoveEndRef.current?.({ lng: c.lng, lat: c.lat });
         });
 
         map.on("mousemove", async (e) => {
@@ -435,6 +559,11 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           const point = { lng: e.lngLat.lng, lat: e.lngLat.lat };
           const elevation = await elevationProviderRef.current.getElevation(point);
           onElevationHoverRef.current(elevation, point);
+        });
+
+        map.on("moveend", () => {
+          const c = map.getCenter();
+          onMoveEndRef.current?.({ lng: c.lng, lat: c.lat });
         });
 
         map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
@@ -576,6 +705,92 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
         clearRect();
       };
     }, [mapReady, regionDrawEnabled, onRegionDrawn]);
+
+    useEffect(() => {
+      const map = mapReady;
+      if (!map || !pickPointEnabled) return;
+
+      const onClick = (e: maplibregl.MapMouseEvent) => {
+        onPointPicked?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+      };
+      map.getCanvas().style.cursor = "crosshair";
+      map.on("click", onClick);
+      return () => {
+        map.off("click", onClick);
+        map.getCanvas().style.cursor = "";
+      };
+    }, [mapReady, pickPointEnabled, onPointPicked]);
+
+    useEffect(() => {
+      const map = mapReady;
+      clearMeasurementRef.current = null;
+      if (!map || measureMode === "off") return;
+
+      const LINE_SOURCE_ID = "measure-line";
+      const LINE_LAYER_ID = "measure-line-layer";
+      const POINTS_SOURCE_ID = "measure-points";
+      const POINTS_LAYER_ID = "measure-points-layer";
+      let points: LngLat[] = [];
+
+      map.addSource(LINE_SOURCE_ID, { type: "geojson", data: EMPTY_FEATURE_COLLECTION });
+      map.addLayer({
+        id: LINE_LAYER_ID,
+        type: "line",
+        source: LINE_SOURCE_ID,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#f5a623", "line-width": 3, "line-dasharray": [1.5, 1.5] },
+      });
+      map.addSource(POINTS_SOURCE_ID, { type: "geojson", data: EMPTY_FEATURE_COLLECTION });
+      map.addLayer({
+        id: POINTS_LAYER_ID,
+        type: "circle",
+        source: POINTS_SOURCE_ID,
+        paint: { "circle-radius": 4, "circle-color": "#f5a623", "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 },
+      });
+
+      const render = () => {
+        const coords = points.map((p) => [p.lng, p.lat] as [number, number]);
+        const closed = measureMode === "area" && points.length >= 3 ? [...coords, coords[0]] : coords;
+        const lineData: GeoJSON.FeatureCollection = {
+          type: "FeatureCollection",
+          features: coords.length >= 2 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: closed } }] : [],
+        };
+        const pointsData: GeoJSON.FeatureCollection = {
+          type: "FeatureCollection",
+          features: coords.map((c) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } })),
+        };
+        (map.getSource(LINE_SOURCE_ID) as maplibregl.GeoJSONSource).setData(lineData);
+        (map.getSource(POINTS_SOURCE_ID) as maplibregl.GeoJSONSource).setData(pointsData);
+
+        const totalMeters = measureMode === "area" && points.length >= 3 ? pathLength([...points, points[0]]) : pathLength(points);
+        const areaSqMeters = measureMode === "area" && points.length >= 3 ? polygonAreaSqMeters(points) : null;
+        onMeasureUpdate?.(points, totalMeters, areaSqMeters);
+      };
+
+      const onClick = (e: maplibregl.MapMouseEvent) => {
+        points = [...points, { lng: e.lngLat.lng, lat: e.lngLat.lat }];
+        render();
+      };
+      map.getCanvas().style.cursor = "crosshair";
+      map.on("click", onClick);
+      render();
+
+      clearMeasurementRef.current = () => {
+        points = [];
+        render();
+      };
+
+      return () => {
+        map.off("click", onClick);
+        map.getCanvas().style.cursor = "";
+        if (map.getLayer(LINE_LAYER_ID)) map.removeLayer(LINE_LAYER_ID);
+        if (map.getSource(LINE_SOURCE_ID)) map.removeSource(LINE_SOURCE_ID);
+        if (map.getLayer(POINTS_LAYER_ID)) map.removeLayer(POINTS_LAYER_ID);
+        if (map.getSource(POINTS_SOURCE_ID)) map.removeSource(POINTS_SOURCE_ID);
+        clearMeasurementRef.current = null;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mapReady, measureMode]);
 
     return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
   },

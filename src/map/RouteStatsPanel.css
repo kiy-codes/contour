@@ -121,3 +121,69 @@
   border-radius: 2px;
   display: inline-block;
 }
+
+.route-stats-panel__analysis {
+  font-size: 0.78em;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.route-stats-panel__analysis summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.route-stats-panel__analysis-line {
+  margin: 8px 0 0;
+  line-height: 1.4;
+}
+
+.route-stats-panel__steep-list,
+.route-stats-panel__waypoint-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.route-stats-panel__steep-list li,
+.route-stats-panel__waypoint-list li {
+  margin-bottom: 2px;
+}
+
+.route-stats-panel__waypoint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-stats-panel__waypoint-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.route-stats-panel__waypoint-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  font-size: 0.7em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.route-stats-panel__waypoint-btn:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+}
+
+.route-stats-panel__waypoint-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

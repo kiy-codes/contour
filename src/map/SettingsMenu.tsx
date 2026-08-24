@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTheme, type Theme } from "../theme/ThemeContext";
 import type { GeolocationStatus } from "../geo/useGeolocation";
 import { useUnits } from "../units/UnitsContext";
+import { useCoordinateFormat } from "../geo/CoordinateFormatContext";
 import { useExitTransition } from "../theme/useExitTransition";
 import CacheControls from "./CacheControls";
 import "./TerrainControls.css";
@@ -66,6 +67,7 @@ export default function SettingsMenu({ onOpenOfflineManager, locationStatus, onS
   const [open, setOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const { system, toggle } = useUnits();
+  const { format: coordFormat, toggle: toggleCoordFormat } = useCoordinateFormat();
   const rootRef = useRef<HTMLDivElement>(null);
   const { rendered, closing } = useExitTransition(open, CLOSE_ANIMATION_MS);
 
@@ -116,6 +118,12 @@ export default function SettingsMenu({ onOpenOfflineManager, locationStatus, onS
             <span>Units</span>
             <button className="settings-menu__units-btn" onClick={toggle} title="Toggle units">
               {system === "metric" ? "km / m" : "mi / ft"}
+            </button>
+          </div>
+          <div className="terrain-controls__row" style={{ justifyContent: "space-between" }}>
+            <span>Coordinates</span>
+            <button className="settings-menu__units-btn" onClick={toggleCoordFormat} title="Toggle coordinate format">
+              {coordFormat === "dd" ? "Decimal" : "DMS"}
             </button>
           </div>
           {locationStatus === "active" && onStopSharingLocation && (

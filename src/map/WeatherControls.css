@@ -1,0 +1,129 @@
+.weather-controls {
+  min-width: 220px;
+}
+
+.weather-controls__layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.weather-controls__pill {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.78em;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: var(--ui-fill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.weather-controls__pill:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+  transform: translateY(-1px);
+}
+
+.weather-controls__pill:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.weather-controls__pill--active {
+  background: rgba(70, 130, 240, 0.75);
+  border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+}
+
+.weather-controls__hint {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.weather-controls__hint--error {
+  color: #e2662d;
+}
+
+.weather-controls__legend-hint {
+  font-size: 0.72em;
+  color: var(--text-muted);
+  margin: 0;
+  font-style: italic;
+}
+
+.weather-controls__status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75em;
+}
+
+.weather-controls__status {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.weather-controls__status--ready {
+  color: #4caf78;
+}
+
+.weather-controls__status--error {
+  color: #e2662d;
+}
+
+.weather-controls__status--loading {
+  color: rgba(70, 130, 240, 0.95);
+}
+
+.weather-controls__timestamp {
+  color: var(--text-muted);
+}
+
+.weather-controls__forecast {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weather-controls__slider {
+  width: 100%;
+  accent-color: #78aaff;
+}
+
+.weather-controls__hour-label {
+  font-size: 0.78em;
+  font-weight: 600;
+  text-align: center;
+}
+
+.weather-controls__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.weather-controls__grid > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.weather-controls__value {
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.weather-controls__label {
+  font-size: 0.68em;
+  color: var(--text-muted);
+}
+
+.weather-controls__attribution {
+  font-size: 0.65em;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}

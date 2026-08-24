@@ -1,0 +1,36 @@
+.avalanche-info-panel {
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+
+.avalanche-info-panel__badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--ui-border);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.avalanche-info-panel__advice {
+  margin: 10px 0 0;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.avalanche-info-panel__link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.82em;
+  color: #78aaff;
+}
+
+.avalanche-info-panel__disclaimer {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 0.68em;
+  line-height: 1.4;
+  color: var(--text-muted);
+}

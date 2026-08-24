@@ -2,6 +2,30 @@
 
 All notable changes to Contour are documented here. Versions follow `major.minor.patch`.
 
+## [1.2.0] — 2026-08-24
+
+### Added
+- **Weather map** — live weather overlay on the desktop map:
+  - Raster map layers (Temperature, Precipitation, Wind, Cloud cover, Pressure) via OpenWeatherMap Weather Maps 1.0, gated behind a new free `VITE_OWM_API_KEY`; shows a clear "unavailable" state with setup instructions when no key is configured, rather than silently doing nothing.
+  - A keyless hourly forecast panel (temperature, precipitation, rain, snowfall, cloud cover, wind speed/direction, freezing level) for the current map center via Open-Meteo, with a real time slider across the next 48 hours and an explicit "stale data" indicator after 30 minutes without a refresh.
+  - Only requests data for what's on screen — raster tiles are viewport-scoped like every other map layer, and the forecast panel only fetches for the current map center while open, with a 5-minute cache and automatic cancellation of superseded requests.
+- **Avalanche danger ratings** — a map layer showing current avalanche danger for US/Alaska forecast centers (avalanche.org), with each region's own official color/rating, an off-season/no-rating state shown honestly rather than hidden or faked, a click-through panel linking to the official forecast, a legend, and a persistent safety disclaimer. No coverage outside the US — shown as an explicit, documented limitation, not a broken layer.
+- **Smart route planning** — a route planner alongside manual route drawing:
+  - Loop routes with a distance target (OpenRouteService's round-trip routing), out-and-back and point-to-point shapes, walking/hiking/cycling activity types, "avoid steps"/"avoid fords" constraints, an optional max-elevation-gain check, and a way to generate and compare a few loop alternatives.
+  - Preferences the routing provider can't actually honor (viewpoints, peaks, surface type) are shown disabled with an explanation rather than faked as working.
+  - Generated routes flow through the same GPX export and route-analysis pipeline as manually drawn or imported routes.
+- **Route analysis** — extended stats for any route (planned, drawn, or imported): elevation range (min/max), automatically-identified steep sections (≥15% grade), an estimated difficulty rating with the reasoning spelled out (distance/ascent/max grade — explicitly not an official trail rating), and a waypoint summary, all in a new collapsible "Route analysis" section. Recalculates automatically after any edit.
+- **Planning tools**: measure distance and measure area (click-to-add-point, live readout, clear/cancel), a cursor coordinate readout with copy-to-clipboard and a decimal/DMS format toggle in Settings, drag-free waypoint reordering (▲/▼, fully undo/redo-able), a best-effort lat/lng grid overlay, and GeoJSON/KML import alongside the existing GPX import, plus GeoJSON export alongside GPX export.
+
+### Changed
+- "Import GPX" is now "Import track" everywhere, reflecting that it accepts GPX, GeoJSON, and KML.
+
+### Known limitations
+- Weather map tiles need a free OpenWeatherMap key and only show current conditions (no historical/forecast time travel on the free tier) — the separate Open-Meteo forecast panel is what covers real multi-hour forecasting.
+- Avalanche coverage is US/Alaska only; no global or European avalanche source is wired up yet (see the provider interface for adding one).
+- KMZ (zipped KML) isn't supported, only plain KML — KMZ would need a new zip-handling dependency.
+- The routing provider has no signal for viewpoints, peaks, or surface type, so those planner preferences are shown but disabled rather than implemented.
+
 ## [1.1.0] — 2026-08-24
 
 ### Added

@@ -7,8 +7,8 @@
 | Desktop shell | Tauri v2 (Rust backend, WebView2 on Windows) |
 | Frontend | React + TypeScript + Vite |
 | 3D map/globe | MapLibre GL JS (globe projection, `raster-dem` terrain) |
-| Local cache | SQLite via Tauri's Rust backend (tile/DEM/geocode cache) |
-| GPX | Generated client-side, no server dependency |
+| Local cache | IndexedDB (`src/cache/`) — tile/style/DEM/geocode cache with size-capped LRU eviction; a MapLibre custom protocol (`wmcache://`) routes ordinary map/terrain/satellite/topo tiles through it. Weather map tiles deliberately bypass it (see below) since they're time-varying, not static geography. |
+| GPX/GeoJSON/KML | Generated/parsed client-side, no server dependency |
 | External HTTP (search) | `@tauri-apps/plugin-http` — plain browser `fetch()` can't set a custom User-Agent, which Nominatim's usage policy requires; the Tauri HTTP plugin routes requests through the Rust backend instead, scoped via capability permissions to the specific hosts in `src-tauri/capabilities/default.json` |
 
 ## Provider architecture
@@ -25,6 +25,9 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 | `RoutingProvider` | `RoutingProvider.ts` | Route calculation |
 | `OutdoorDataProvider` | `OutdoorDataProvider.ts` | Hiking/walking trail geometry |
 | `SkiDataProvider` | `SkiDataProvider.ts` | Ski areas/runs/lifts |
+| `WeatherMapProvider` | `WeatherProvider.ts` | Raster weather map tiles (temp/precip/wind/clouds/pressure) |
+| `WeatherForecastProvider` | `WeatherProvider.ts` | Point/time hourly forecast data |
+| `AvalancheProvider` | `AvalancheProvider.ts` | Regional avalanche danger ratings |
 
 ## Cost / provider table (V1 target: £0/month mandatory)
 
@@ -40,6 +43,9 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 | Routing | OpenRouteService | Free tier | ~2,000 req/day, 40 req/60s (official FAQ) | Yes, free signup, no card | © openrouteservice.org, OSM contributors |
 | Search/geocoding | Photon (primary), Nominatim (fallback) | Free | Fair-use only; Nominatim hard cap 1 req/sec | No | OSM attribution |
 | 2D topo/contour fallback | OpenTopoMap | Free | ~400k tiles/month "low volume" threshold | No | OpenTopoMap + OSM + SRTM attribution |
+| Weather map overlay (temp/precip/wind/clouds/pressure) | OpenWeatherMap Weather Maps 1.0 | Free tier | 60 calls/min, 1,000,000 calls/month | Yes, free signup | "Weather data by OpenWeatherMap" |
+| Weather forecast (point/hourly) | Open-Meteo | Free, no published hard cap for personal/non-commercial use | Fair-use only | No | "Weather data by Open-Meteo.com" (CC BY 4.0) |
+| Avalanche danger ratings | avalanche.org (National Avalanche Center) public map-layer API | Free | US/Alaska forecast centers only; no published rate limit | No | "Avalanche data: avalanche.org forecast centers" |
 
 ### Known limitations
 - Esri World Imagery: use the ArcGIS Location Platform key, not the legacy keyless tile endpoint (whose stated terms are scoped to OSM-editing/tracing use, not general app display).
@@ -47,6 +53,9 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 - Nominatim/Photon are shared community infrastructure — client debounces, caches, and rate-limits to stay a good citizen.
 - Waymarked Trails has no formal published API terms; treated as a best-effort optional overlay.
 - OSM data completeness varies by region — rural/non-Western coverage will be sparser.
+- OpenWeatherMap Weather Maps 1.0's free tier is current-conditions-only — no forecast/historical time parameter, so the map overlay can't show a future/past snapshot (the Open-Meteo forecast panel is the real forecast source, and is entirely separate/keyless).
+- avalanche.org's public map-layer endpoint only covers US/Alaska forecast centers, gives one overall rating per center (not a full elevation-band/aspect breakdown), and its written terms of use weren't independently reviewed beyond confirming it's the same live endpoint avalanche.org's own site uses — worth a proper terms check before high-volume or commercial use.
+- ORS's `round_trip` (loop) option treats a requested distance as approximate, not exact, since it has to follow real trails/roads. ORS's `steepness_difficulty` weighting parameter is accepted by the API but its exact effect direction couldn't be independently confirmed from documentation, so it is deliberately not exposed in the smart route planner — only the unambiguous `avoid_features` (steps, fords) constraints are.
 
 ## Development phases
 
@@ -64,3 +73,10 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 11b. Satellite / 3D Satellite modes — Esri World Imagery via ArcGIS Location Platform, hybrid overlay under base-style labels, 3D Satellite auto-enables terrain (done — verified live with your key, real imagery confirmed rendering and correctly aligned)
 11c. Terrain (2D) mode — OpenTopoMap hillshaded/hypsometric raster overlay, same hybrid-under-labels approach, no key needed (done — verified live, real relief shading confirmed rendering correctly). All four map modes (Standard/Satellite/Terrain/3D Satellite) are now built and enabled.
 12. Final testing against the V1 acceptance checklist (done — full layer/source stack, search, routing, elevation profile, GPX, glass UI, and cache all confirmed intact with no regressions from phases 9-11; see chat for the two items that need your own check in the real window)
+13. Offline maps — region download (draw/pick layers/zoom range), progress UI, pause/resume/cancel, pinned-tile cache survival, Downloaded Regions manager (done, v1.1)
+14. GPS location — position marker + accuracy circle, recenter, start route from location, local-only (done, v1.1)
+15. Weather — OpenWeatherMap raster map overlay (temp/precip/wind/clouds/pressure, needs a free key) + keyless Open-Meteo hourly forecast panel with a real time slider (done, v1.2 — verified live: all 8 requested weather metrics confirmed real via a direct Open-Meteo test call; OWM tile fetch itself could only be UI/error-path verified without a live key, see CHANGELOG)
+16. Avalanche — US/Alaska forecast-center danger ratings via avalanche.org's public map-layer API, legend, safety disclaimer, honest off-season/no-coverage states (done, v1.2 — verified live against the real API; every center was off-season at verification time, which the UI handles as a normal state, not an error)
+17. Smart route planning — loop/out-and-back/point-to-point shapes, activity type, avoid-steps/fords constraints, loop alternatives, honest disabled state for unsupported preferences (done, v1.2 — round_trip and avoid_features verified live against ORS before implementation)
+18. Route analysis — elevation range, steep-section detection, explained difficulty estimate, waypoint summary (done, v1.2 — verified live with real DEM-derived elevation data on a real route)
+19. Planning tools — measure distance/area, coordinate readout + clipboard copy + DD/DMS toggle, waypoint reordering with undo/redo, lat/lng grid overlay, GeoJSON/KML import, GeoJSON export (done, v1.2)

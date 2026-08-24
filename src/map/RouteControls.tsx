@@ -21,6 +21,7 @@ export interface RouteControlsProps {
   onModeChange: (mode: RoutingMode) => void;
   onImportGpx: () => void;
   onExportGpx: () => void;
+  onExportGeoJson?: () => void;
   /** Swaps the floating top-right panel for a FAB (collapsed) / full-width
    * bottom bar (editing) — the floating panel is what made route editing
    * unusable on a phone screen, covering most of the map. */
@@ -30,6 +31,9 @@ export interface RouteControlsProps {
    * from the current position. Omitted entirely on mobile. */
   hasLocationFix?: boolean;
   onStartFromLocation?: () => void;
+  /** Desktop-only entry point into the smart route planner (see
+   * RoutePlannerPanel) — omitted on mobile. */
+  onPlanRoute?: () => void;
 }
 
 const MODE_OPTIONS: { mode: RoutingMode; label: string; needsOrs: boolean }[] = [
@@ -56,9 +60,11 @@ export default function RouteControls({
   onModeChange,
   onImportGpx,
   onExportGpx,
+  onExportGeoJson,
   isMobile = false,
   hasLocationFix = false,
   onStartFromLocation,
+  onPlanRoute,
 }: RouteControlsProps) {
   // The full editing panel below is its own branch, not a toggled child —
   // so its close (Finish+Clear collapsing back down) needs the same
@@ -87,8 +93,13 @@ export default function RouteControls({
             Start from my location
           </button>
         )}
+        {onPlanRoute && (
+          <button className="glass-btn" onClick={onPlanRoute}>
+            Plan a route
+          </button>
+        )}
         <div className="route-controls__row">
-          <button onClick={onImportGpx}>Import GPX</button>
+          <button onClick={onImportGpx}>Import track</button>
         </div>
       </div>
     );
@@ -99,10 +110,13 @@ export default function RouteControls({
       <div className={isMobile ? "route-controls-bar" : "terrain-controls"}>
         <div className="route-controls__row">
           <button onClick={onExportGpx}>Export GPX</button>
-          <button onClick={onImportGpx}>Import GPX</button>
+          {onExportGeoJson && <button onClick={onExportGeoJson}>Export GeoJSON</button>}
         </div>
         <div className="route-controls__row">
+          <button onClick={onImportGpx}>Import track</button>
           <button onClick={onClear}>Clear</button>
+        </div>
+        <div className="route-controls__row">
           <button onClick={onStart}>Start new route</button>
         </div>
       </div>
@@ -157,7 +171,14 @@ export default function RouteControls({
         <button onClick={onExportGpx} disabled={!hasWaypoints}>
           Export GPX
         </button>
-        <button onClick={onImportGpx}>Import GPX</button>
+        {onExportGeoJson && (
+          <button onClick={onExportGeoJson} disabled={!hasWaypoints}>
+            GeoJSON
+          </button>
+        )}
+      </div>
+      <div className="route-controls__row">
+        <button onClick={onImportGpx}>Import track</button>
       </div>
     </div>
   );

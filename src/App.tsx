@@ -25,13 +25,29 @@ import { routeReducer, initialRouteEditorState } from "./routing/routeReducer";
 import { computeElevationProfile, type ProfilePoint, type ProfileStats } from "./routing/elevationProfile";
 import { estimateHikingDurationSeconds } from "./routing/timeEstimate";
 import { buildGpxXml, suggestGpxFilename } from "./gpx/gpxExport";
+import { buildGeoJson, suggestGeoJsonFilename } from "./gpx/geoJsonExport";
 import { parseGpx } from "./gpx/gpxImport";
-import { saveGpxFile, openGpxFile } from "./gpx/gpxFileIO";
+import { parseGeoJson } from "./gpx/geoJsonImport";
+import { parseKml } from "./gpx/kmlImport";
+import { saveGpxFile, openTrackFile, saveTextFile } from "./gpx/gpxFileIO";
+import type { WeatherMapLayerId } from "./providers/WeatherProvider";
+import { weatherForecastProvider } from "./providers/weatherInstances";
+import { useWeatherForecast } from "./weather/useWeatherForecast";
+import type { WeatherTileStatus } from "./weather/useWeatherMapLayer";
+import type { AvalancheRegionFeature } from "./providers/AvalancheProvider";
+import type { AvalancheStatus } from "./avalanche/useAvalancheLayer";
+import AvalancheInfoPanel from "./map/AvalancheInfoPanel";
+import RoutePlannerPanel from "./map/RoutePlannerPanel";
+import type { RouteConstraints, RoutingMode } from "./providers/RoutingProvider";
+import { formatCoordinate, coordinateToClipboardText } from "./geo/coordinateFormat";
+import { useCoordinateFormat } from "./geo/CoordinateFormatContext";
+import MeasureTool, { type MeasureMode } from "./map/MeasureTool";
 import "./App.css";
 
 const geocodingProvider = new CompositeGeocodingProvider();
 const hasOrs = Boolean(import.meta.env.VITE_ORS_API_KEY);
 const hasEsri = Boolean(import.meta.env.VITE_ESRI_API_KEY);
+const hasOwm = Boolean(import.meta.env.VITE_OWM_API_KEY);
 
 const ZOOM_BY_TYPE: Record<SearchResult["type"], number> = {
   country: 5,
@@ -53,11 +69,15 @@ const EMPTY_PROFILE_STATS: ProfileStats = {
   computedDescentMeters: 0,
   maxSlopePercent: 0,
   avgSlopePercent: 0,
+  minElevationMeters: 0,
+  maxElevationMeters: 0,
+  steepSections: [],
   hasElevationData: false,
 };
 
 function App() {
   const isMobile = useIsMobile();
+  const { format: coordFormat } = useCoordinateFormat();
   const mapHandle = useRef<MapCanvasHandle>(null);
   const geolocation = useGeolocation();
   const [mode, setMode] = useState<MapStyleMode>("standard");
@@ -73,6 +93,8 @@ function App() {
   const [skiRunNamesEnabled, setSkiRunNamesEnabled] = useState(false);
   const [skiLiftNamesEnabled, setSkiLiftNamesEnabled] = useState(false);
   const [hoverElevation, setHoverElevation] = useState<number | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<LngLat | null>(null);
+  const [coordCopied, setCoordCopied] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<SearchResult | null>(null);
   const [placeElevation, setPlaceElevation] = useState<number | null | "loading">(null);
   const [skiTarget, setSkiTarget] = useState<SkiInfoTarget | null>(null);
@@ -87,6 +109,29 @@ function App() {
   const [drawnBbox, setDrawnBbox] = useState<Bbox | null>(null);
   const [offlineManagerOpen, setOfflineManagerOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [weatherMapLayer, setWeatherMapLayer] = useState<WeatherMapLayerId | "none">("none");
+  const [weatherTileStatus, setWeatherTileStatus] = useState<WeatherTileStatus>("idle");
+  const [weatherLastRefreshedAt, setWeatherLastRefreshedAt] = useState<number | null>(null);
+  const [weatherForecastEnabled, setWeatherForecastEnabled] = useState(false);
+  const [weatherHourIndex, setWeatherHourIndex] = useState(0);
+  const [mapCenter, setMapCenter] = useState<LngLat | null>(null);
+  const weatherForecast = useWeatherForecast(weatherForecastProvider, mapCenter, weatherForecastEnabled);
+  const [avalancheEnabled, setAvalancheEnabled] = useState(false);
+  const [avalancheStatus, setAvalancheStatus] = useState<AvalancheStatus>("idle");
+  const [avalancheError, setAvalancheError] = useState<string | null>(null);
+  const [avalancheRegionCount, setAvalancheRegionCount] = useState(0);
+  const [avalancheFetchedAt, setAvalancheFetchedAt] = useState<number | null>(null);
+  const [avalancheTarget, setAvalancheTarget] = useState<AvalancheRegionFeature | null>(null);
+  const [routePlannerOpen, setRoutePlannerOpen] = useState(false);
+  const [plannerStartPoint, setPlannerStartPoint] = useState<LngLat | null>(null);
+  const [plannerStartLabel, setPlannerStartLabel] = useState<string>("Map center");
+  const [plannerEndPoint, setPlannerEndPoint] = useState<LngLat | null>(null);
+  const [pickPointActive, setPickPointActive] = useState(false);
+  const [measureMode, setMeasureMode] = useState<MeasureMode>("off");
+  const [measurePointCount, setMeasurePointCount] = useState(0);
+  const [measureTotalMeters, setMeasureTotalMeters] = useState(0);
+  const [measureAreaSqMeters, setMeasureAreaSqMeters] = useState<number | null>(null);
+  const [gridEnabled, setGridEnabled] = useState(false);
 
   // Whichever route is actually on screen right now — an imported track
   // takes precedence over an in-progress computed route.
@@ -99,12 +144,25 @@ function App() {
   // the FAB (Finish/Clear/Start-new all lead there).
   const mobileRouteBarShowing = isMobile && (routeState.isEditing || routeState.waypoints.length > 0 || importedRoute !== null);
 
-  const handleElevationHover = (elevation: number | null, _point: LngLat) => {
+  const handleElevationHover = (elevation: number | null, point: LngLat) => {
     setHoverElevation(elevation);
+    setHoverPoint(point);
+  };
+
+  const handleCopyCoordinate = () => {
+    if (!hoverPoint) return;
+    navigator.clipboard
+      .writeText(coordinateToClipboardText(hoverPoint))
+      .then(() => {
+        setCoordCopied(true);
+        setTimeout(() => setCoordCopied(false), 1500);
+      })
+      .catch(() => {});
   };
 
   const handleSelectResult = async (result: SearchResult) => {
     setSkiTarget(null);
+    setAvalancheTarget(null);
     mapHandle.current?.flyToResult(result.center, result.bbox, ZOOM_BY_TYPE[result.type]);
     setSelectedPlace(result);
     setPlaceElevation("loading");
@@ -115,6 +173,7 @@ function App() {
 
   const handleSkiRunClick = async (run: SkiRun) => {
     setSelectedPlace(null);
+    setAvalancheTarget(null);
     const lengthMeters = pathLength(run.geometry);
     setSkiTarget({ kind: "run", run: { ...run, lengthMeters } });
     const elevationProvider = mapHandle.current?.getElevationProvider();
@@ -128,6 +187,7 @@ function App() {
 
   const handleSkiLiftClick = async (lift: SkiLift) => {
     setSelectedPlace(null);
+    setAvalancheTarget(null);
     setSkiTarget({ kind: "lift", lift });
     const elevationProvider = mapHandle.current?.getElevationProvider();
     if (!elevationProvider || lift.geometry.length === 0) return;
@@ -197,6 +257,36 @@ function App() {
     routeDispatch({ type: "ADD_WAYPOINT", point: geolocation.position.point });
   };
 
+  const handleMoveEnd = (center: LngLat) => setMapCenter(center);
+  const handleWeatherTileStatusChange = (status: WeatherTileStatus, lastRefreshedAt: number | null) => {
+    setWeatherTileStatus(status);
+    setWeatherLastRefreshedAt(lastRefreshedAt);
+  };
+  const handleAvalancheSelect = (feature: AvalancheRegionFeature) => {
+    setSelectedPlace(null);
+    setSkiTarget(null);
+    setAvalancheTarget(feature);
+  };
+  const handleAvalancheStatusChange = (
+    status: AvalancheStatus,
+    error: string | null,
+    regionCount: number,
+    fetchedAt: number | null,
+  ) => {
+    setAvalancheStatus(status);
+    setAvalancheError(error);
+    setAvalancheRegionCount(regionCount);
+    setAvalancheFetchedAt(fetchedAt);
+  };
+
+  // Forecast hour indices are only meaningful relative to the currently
+  // loaded hours array — clamp back into range whenever a fresh (shorter or
+  // differently-timed) forecast lands, rather than pointing at a stale index.
+  useEffect(() => {
+    const count = weatherForecast.data?.hours.length ?? 0;
+    if (count > 0 && weatherHourIndex >= count) setWeatherHourIndex(0);
+  }, [weatherForecast.data, weatherHourIndex]);
+
   const handleRegionDrawn = (bbox: Bbox) => {
     setRegionDrawActive(false);
     setDrawnBbox(bbox);
@@ -233,17 +323,19 @@ function App() {
 
   const handleImportGpx = async () => {
     setGpxNotice(null);
-    let xml: string | null;
+    let file: { path: string; contents: string } | null;
     try {
-      xml = await openGpxFile();
+      file = await openTrackFile();
     } catch (err) {
       setGpxNotice(`Could not open file: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
-    if (xml === null) return; // user cancelled
+    if (file === null) return; // user cancelled
 
     try {
-      const parsed = parseGpx(xml);
+      const ext = file.path.split(".").pop()?.toLowerCase();
+      const parsed =
+        ext === "geojson" || ext === "json" ? parseGeoJson(file.contents) : ext === "kml" ? parseKml(file.contents) : parseGpx(file.contents);
       routeDispatch({ type: "CLEAR" });
       routeDispatch({ type: "STOP_EDITING" });
       setRouteResult(null);
@@ -256,7 +348,7 @@ function App() {
       const bounds = boundsOf(parsed.points);
       if (bounds) mapHandle.current?.flyToResult(parsed.points[0], bounds);
     } catch (err) {
-      setGpxNotice(`Could not read GPX file: ${err instanceof Error ? err.message : String(err)}`);
+      setGpxNotice(`Could not read file: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -284,6 +376,80 @@ function App() {
       if (saved) setGpxNotice(`Saved ${filename}`);
     } catch (err) {
       setGpxNotice(`Could not save file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleExportGeoJson = async () => {
+    if (!activeResult) return;
+    setGpxNotice(null);
+    const routeName = importedRoute ? importedRouteName : "Route";
+    const json = buildGeoJson({
+      routeName,
+      trackPoints: activeResult.points,
+      waypoints: routeState.waypoints.map((point, i) => ({
+        point,
+        name: i === 0 ? "Start" : i === routeState.waypoints.length - 1 ? "Finish" : `Waypoint ${i + 1}`,
+      })),
+    });
+    const filename = suggestGeoJsonFilename(routeName, activeResult.distanceMeters);
+    try {
+      const saved = await saveTextFile(json, filename, { name: "GeoJSON", extensions: ["geojson", "json"] });
+      if (saved) setGpxNotice(`Saved ${filename}`);
+    } catch (err) {
+      setGpxNotice(`Could not save file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleOpenRoutePlanner = () => {
+    setPlannerStartPoint(mapCenter ?? mapHandle.current?.getCenter() ?? null);
+    setPlannerStartLabel("Map center");
+    setPlannerEndPoint(null);
+    setRoutePlannerOpen(true);
+  };
+  const handleUseMapCenterStart = () => {
+    setPlannerStartPoint(mapCenter ?? mapHandle.current?.getCenter() ?? null);
+    setPlannerStartLabel("Map center");
+  };
+  const handleUseGpsStart = () => {
+    if (!geolocation.position) return;
+    setPlannerStartPoint(geolocation.position.point);
+    setPlannerStartLabel("My location");
+  };
+  const handlePointPicked = (point: LngLat) => {
+    setPlannerEndPoint(point);
+    setPickPointActive(false);
+  };
+  const handlePlanRoundTrip = (lengthMeters: number, mode: RoutingMode, constraints: RouteConstraints, seed: number) => {
+    if (!plannerStartPoint) return Promise.reject(new Error("No start point"));
+    return mapHandle.current!.planRoundTrip(plannerStartPoint, { lengthMeters, seed }, mode, constraints);
+  };
+  const handlePlanRoute = (waypoints: LngLat[], mode: RoutingMode, constraints: RouteConstraints) => {
+    return mapHandle.current!.planRoute(waypoints, mode, constraints);
+  };
+  const handleRouteGenerated = (result: RouteResult, label: string) => {
+    routeDispatch({ type: "CLEAR" });
+    routeDispatch({ type: "STOP_EDITING" });
+    setRouteResult(null);
+    setRouteError(null);
+    setImportedRouteName(label);
+    setImportedRoute(result);
+    setRoutePlannerOpen(false);
+    setPickPointActive(false);
+    const bounds = boundsOf(result.points);
+    if (bounds) mapHandle.current?.flyToResult(result.points[0], bounds);
+  };
+
+  const handleMeasureUpdate = (points: LngLat[], totalMeters: number, areaSqMeters: number | null) => {
+    setMeasurePointCount(points.length);
+    setMeasureTotalMeters(totalMeters);
+    setMeasureAreaSqMeters(areaSqMeters);
+  };
+  const handleMeasureModeChange = (mode: MeasureMode) => {
+    setMeasureMode(mode);
+    if (mode === "off") {
+      setMeasurePointCount(0);
+      setMeasureTotalMeters(0);
+      setMeasureAreaSqMeters(null);
     }
   };
 
@@ -320,6 +486,17 @@ function App() {
         onRouteComputed={handleRouteComputed}
         regionDrawEnabled={regionDrawActive}
         onRegionDrawn={handleRegionDrawn}
+        weatherMapLayer={weatherMapLayer}
+        onMoveEnd={handleMoveEnd}
+        onWeatherTileStatusChange={handleWeatherTileStatusChange}
+        avalancheEnabled={avalancheEnabled}
+        onAvalancheSelect={handleAvalancheSelect}
+        onAvalancheStatusChange={handleAvalancheStatusChange}
+        pickPointEnabled={pickPointActive}
+        onPointPicked={handlePointPicked}
+        measureMode={measureMode}
+        onMeasureUpdate={handleMeasureUpdate}
+        gridEnabled={gridEnabled}
       />
       <div className="glow-layer" aria-hidden="true">
         <div className="glow-blob glow-blob--1" />
@@ -332,6 +509,7 @@ function App() {
         <PlaceInfoPanel place={selectedPlace} elevation={placeElevation} onClose={() => setSelectedPlace(null)} />
       )}
       {skiTarget && <SkiInfoPanel target={skiTarget} onClose={() => setSkiTarget(null)} />}
+      {avalancheTarget && <AvalancheInfoPanel feature={avalancheTarget} onClose={() => setAvalancheTarget(null)} />}
       {isMobile ? (
         <>
           <div className="mobile-settings-slot">
@@ -378,6 +556,7 @@ function App() {
             onClear={handleClearRoute}
             onImportGpx={handleImportGpx}
             onExportGpx={handleExportGpx}
+            onExportGeoJson={handleExportGeoJson}
             onUndo={() => routeDispatch({ type: "UNDO" })}
             onRedo={() => routeDispatch({ type: "REDO" })}
             onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
@@ -423,8 +602,36 @@ function App() {
               onRunNamesEnabledChange={setSkiRunNamesEnabled}
               liftNamesEnabled={skiLiftNamesEnabled}
               onLiftNamesEnabledChange={setSkiLiftNamesEnabled}
+              hasOwmKey={hasOwm}
+              activeMapLayer={weatherMapLayer}
+              onActiveMapLayerChange={setWeatherMapLayer}
+              tileStatus={weatherTileStatus}
+              lastRefreshedAt={weatherLastRefreshedAt}
+              forecastEnabled={weatherForecastEnabled}
+              onForecastEnabledChange={setWeatherForecastEnabled}
+              forecast={weatherForecast}
+              hourIndex={weatherHourIndex}
+              onHourIndexChange={setWeatherHourIndex}
+              onRefreshForecast={weatherForecast.refresh}
+              avalancheEnabled={avalancheEnabled}
+              onAvalancheEnabledChange={setAvalancheEnabled}
+              avalancheStatus={avalancheStatus}
+              avalancheError={avalancheError}
+              avalancheRegionCount={avalancheRegionCount}
+              avalancheFetchedAt={avalancheFetchedAt}
+              onRefreshAvalanche={() => mapHandle.current?.refreshAvalanche()}
             />
           </div>
+          <MeasureTool
+            mode={measureMode}
+            onModeChange={handleMeasureModeChange}
+            pointCount={measurePointCount}
+            totalMeters={measureTotalMeters}
+            areaSqMeters={measureAreaSqMeters}
+            onClear={() => mapHandle.current?.clearMeasurement()}
+            gridEnabled={gridEnabled}
+            onGridEnabledChange={setGridEnabled}
+          />
           <RouteControls
             isEditing={routeState.isEditing}
             hasWaypoints={routeState.waypoints.length > 0}
@@ -435,11 +642,13 @@ function App() {
             canRedo={routeState.future.length > 0}
             hasLocationFix={geolocation.position !== null}
             onStartFromLocation={handleStartRouteHere}
+            onPlanRoute={handleOpenRoutePlanner}
             onStart={handleStartRoute}
             onFinish={handleFinishRoute}
             onClear={handleClearRoute}
             onImportGpx={handleImportGpx}
             onExportGpx={handleExportGpx}
+            onExportGeoJson={handleExportGeoJson}
             onUndo={() => routeDispatch({ type: "UNDO" })}
             onRedo={() => routeDispatch({ type: "REDO" })}
             onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
@@ -447,6 +656,27 @@ function App() {
           <RegionDrawTool active={regionDrawActive} onToggle={() => setRegionDrawActive((a) => !a)} />
           {drawnBbox && (
             <OfflineDownloadPanel bbox={drawnBbox} hasEsri={hasEsri} onClose={() => setDrawnBbox(null)} />
+          )}
+          {routePlannerOpen && (
+            <RoutePlannerPanel
+              hasRoundTrip={hasOrs}
+              startPoint={plannerStartPoint}
+              startLabel={plannerStartLabel}
+              hasGpsFix={geolocation.position !== null}
+              onUseGpsStart={handleUseGpsStart}
+              onUseMapCenterStart={handleUseMapCenterStart}
+              pickedEndPoint={plannerEndPoint}
+              pickPointActive={pickPointActive}
+              onTogglePickPoint={() => setPickPointActive((a) => !a)}
+              onClearEndPoint={() => setPlannerEndPoint(null)}
+              planRoundTrip={handlePlanRoundTrip}
+              planRoute={handlePlanRoute}
+              onGenerated={handleRouteGenerated}
+              onClose={() => {
+                setRoutePlannerOpen(false);
+                setPickPointActive(false);
+              }}
+            />
           )}
         </div>
       )}
@@ -456,22 +686,36 @@ function App() {
       {terrainEnabled && (
         <div className="elevation-hud">{hoverElevation !== null ? `Elevation: ${Math.round(hoverElevation)} m` : "Elevation: —"}</div>
       )}
+      {!isMobile && hoverPoint && (
+        <div className="coordinate-hud">
+          <span>{formatCoordinate(hoverPoint, coordFormat)}</span>
+          <button className="coordinate-hud__copy" onClick={handleCopyCoordinate} title="Copy coordinates">
+            {coordCopied ? "Copied" : "Copy"}
+          </button>
+        </div>
+      )}
       {!isMobile && !isOnline && <div className="offline-badge">Offline</div>}
-      <div className="version-badge">v1</div>
+      <div className="version-badge">v1.2</div>
       {gpxNotice && <div className="gpx-notice">{gpxNotice}</div>}
       <RouteStatsPanel
         result={mobileRouteBarShowing ? null : activeResult}
         error={importedRoute ? null : routeError}
         waypointCount={routeState.waypoints.length}
+        waypoints={routeState.waypoints}
         profile={profileStats.profile}
         ascentMeters={ascentMeters}
         descentMeters={descentMeters}
         maxSlopePercent={profileStats.hasElevationData ? profileStats.maxSlopePercent : undefined}
         avgSlopePercent={profileStats.hasElevationData ? profileStats.avgSlopePercent : undefined}
+        minElevationMeters={profileStats.hasElevationData ? profileStats.minElevationMeters : undefined}
+        maxElevationMeters={profileStats.hasElevationData ? profileStats.maxElevationMeters : undefined}
+        steepSections={profileStats.hasElevationData ? profileStats.steepSections : []}
         durationSeconds={durationSeconds}
         isDurationEstimated={isDurationEstimated}
         onProfileHover={handleProfileHover}
         onReturnToRoute={handleReturnToRoute}
+        isEditing={routeState.isEditing}
+        onReorderWaypoint={(from, to) => routeDispatch({ type: "REORDER_WAYPOINT", from, to })}
       />
     </main>
   );

@@ -396,6 +396,41 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+.coordinate-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 8px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+}
+
+.coordinate-hud__copy {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 0.9em;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.coordinate-hud__copy:hover {
+  background: var(--ui-fill-hover);
+}
+
 /* Shown whenever navigator.onLine is false — see App.tsx's online/offline
    listener. Top-center, out of the way of the search bar and right-hand
    control stack, but prominent enough that "why did that tile not load" has

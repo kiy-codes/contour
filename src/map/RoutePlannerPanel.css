@@ -1,0 +1,84 @@
+.route-planner-panel {
+  min-width: 240px;
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+}
+
+.route-planner-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.route-planner-panel__header .place-info-panel__close {
+  position: static;
+  width: 22px;
+  height: 22px;
+}
+
+.route-planner-panel__row-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.route-planner-panel__start-label {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.route-planner-panel__end-point {
+  display: flex;
+  gap: 6px;
+}
+
+.route-planner-panel__number {
+  width: 70px;
+  margin-left: auto;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 0.9em;
+}
+
+.route-planner-panel__unsupported {
+  padding-top: 4px;
+  border-top: 1px solid var(--glass-border);
+  opacity: 0.75;
+}
+
+.route-planner-panel__hint {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.route-planner-panel__hint--error {
+  color: #e2662d;
+}
+
+.route-planner-panel__candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.route-planner-panel__candidates-label {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.route-planner-panel__candidate {
+  text-align: left;
+}

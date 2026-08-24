@@ -15,6 +15,7 @@ export type RouteAction =
   | { type: "ADD_WAYPOINT"; point: LngLat }
   | { type: "MOVE_WAYPOINT"; index: number; point: LngLat }
   | { type: "DELETE_WAYPOINT"; index: number }
+  | { type: "REORDER_WAYPOINT"; from: number; to: number }
   | { type: "SET_MODE"; mode: RoutingMode }
   | { type: "CLEAR" }
   | { type: "UNDO" }
@@ -57,6 +58,14 @@ export function routeReducer(state: RouteEditorState, action: RouteAction): Rout
         state,
         state.waypoints.filter((_, i) => i !== action.index),
       );
+    case "REORDER_WAYPOINT": {
+      if (action.from === action.to || action.from < 0 || action.from >= state.waypoints.length) return state;
+      const to = Math.max(0, Math.min(state.waypoints.length - 1, action.to));
+      const next = [...state.waypoints];
+      const [moved] = next.splice(action.from, 1);
+      next.splice(to, 0, moved);
+      return withHistory(state, next);
+    }
     case "SET_MODE":
       return { ...state, mode: action.mode };
     case "CLEAR":

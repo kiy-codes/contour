@@ -1,0 +1,39 @@
+.measure-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.measure-tool__triggers {
+  display: flex;
+  gap: 4px;
+}
+
+.measure-tool__panel {
+  min-width: 180px;
+}
+
+.measure-tool__hint {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+}
+
+.measure-tool__readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.measure-tool__value {
+  font-size: 1.05em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.measure-tool__label {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}

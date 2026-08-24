@@ -29,6 +29,29 @@ export interface RouteResult {
   waytypeBreakdown?: WaytypeSegment[];
 }
 
+/** Routing constraints confirmed against ORS's own API (live test calls,
+ * 2026-08-24): avoid_features accepts "steps"/"fords" for foot profiles
+ * without a validation error. Deliberately does NOT expose ORS's
+ * steepness_difficulty weighting — that parameter is accepted too, but its
+ * exact direction/semantics (does a higher value avoid or tolerate steeper
+ * terrain?) could not be independently confirmed from documentation alone,
+ * and shipping a "avoid steep terrain" toggle whose actual effect is
+ * unverified would risk misleading users about what it does. */
+export interface RouteConstraints {
+  avoidSteps?: boolean;
+  avoidFords?: boolean;
+}
+
+export interface RoundTripOptions {
+  lengthMeters: number;
+  /** Number of via-points ORS uses to shape the loop — more points follow
+   * the target length more closely but with more turns. ORS default is 5. */
+  points?: number;
+  /** Fixed seed for reproducible "alternatives" (different seeds produce
+   * different real loop shapes of roughly the same target length). */
+  seed?: number;
+}
+
 /**
  * Calculates a route that follows real trails/roads between waypoints.
  * "manual" mode is always available as a straight-line fallback with no
@@ -37,7 +60,7 @@ export interface RouteResult {
 export interface RoutingProvider {
   readonly name: string;
   readonly supportedModes: RoutingMode[];
-  route(waypoints: LngLat[], mode: RoutingMode): Promise<RouteResult>;
+  route(waypoints: LngLat[], mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult>;
 }
 
 /** Straight-line routing between waypoints — no network dependency, always
@@ -47,7 +70,7 @@ export class ManualRoutingProvider implements RoutingProvider {
   readonly name = "Manual (straight line)";
   readonly supportedModes: RoutingMode[] = ["manual"];
 
-  async route(waypoints: LngLat[], _mode: RoutingMode): Promise<RouteResult> {
+  async route(waypoints: LngLat[], _mode: RoutingMode, _constraints?: RouteConstraints): Promise<RouteResult> {
     return {
       points: waypoints.map((w) => ({ ...w })),
       distanceMeters: pathLength(waypoints),
@@ -118,28 +141,14 @@ export class OpenRouteServiceProvider implements RoutingProvider {
 
   constructor(private readonly apiKey: string) {}
 
-  async route(waypoints: LngLat[], mode: RoutingMode): Promise<RouteResult> {
-    const profile = ORS_PROFILE[mode];
-    if (!profile) throw new Error(`OpenRouteService does not support routing mode "${mode}"`);
+  private avoidFeaturesFor(constraints?: RouteConstraints): string[] | undefined {
+    const features: string[] = [];
+    if (constraints?.avoidSteps) features.push("steps");
+    if (constraints?.avoidFords) features.push("fords");
+    return features.length > 0 ? features : undefined;
+  }
 
-    const res = await fetch(`https://api.openrouteservice.org/v2/directions/${profile}/geojson`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.apiKey,
-      },
-      body: JSON.stringify({
-        coordinates: waypoints.map((w) => [w.lng, w.lat]),
-        elevation: true,
-        extra_info: ["waytype"],
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`OpenRouteService request failed: ${res.status} ${body.slice(0, 200)}`);
-    }
-
-    const data = (await res.json()) as OrsGeoJsonResponse;
+  private parseResponse(data: OrsGeoJsonResponse): RouteResult {
     const feature = data.features[0];
     if (!feature) throw new Error("OpenRouteService returned no route");
 
@@ -175,6 +184,68 @@ export class OpenRouteServiceProvider implements RoutingProvider {
       waytypeBreakdown,
     };
   }
+
+  async route(waypoints: LngLat[], mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult> {
+    const profile = ORS_PROFILE[mode];
+    if (!profile) throw new Error(`OpenRouteService does not support routing mode "${mode}"`);
+
+    const avoidFeatures = this.avoidFeaturesFor(constraints);
+    const res = await fetch(`https://api.openrouteservice.org/v2/directions/${profile}/geojson`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: this.apiKey,
+      },
+      body: JSON.stringify({
+        coordinates: waypoints.map((w) => [w.lng, w.lat]),
+        elevation: true,
+        extra_info: ["waytype"],
+        ...(avoidFeatures ? { options: { avoid_features: avoidFeatures } } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`OpenRouteService request failed: ${res.status} ${body.slice(0, 200)}`);
+    }
+    return this.parseResponse((await res.json()) as OrsGeoJsonResponse);
+  }
+
+  /**
+   * Generates a loop starting and ending at `start`, approximately
+   * `opts.lengthMeters` long — ORS's own round_trip optimisation, confirmed
+   * live (2026-08-24): a 5000m target produced a real ~6565m loop with
+   * real ascent/descent from actual trail/road geometry, not a synthetic
+   * circle. ORS treats the target length as approximate, not exact — the
+   * caller should present the result's actual distanceMeters, not assume
+   * it matches the request.
+   */
+  async roundTrip(start: LngLat, opts: RoundTripOptions, mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult> {
+    const profile = ORS_PROFILE[mode];
+    if (!profile) throw new Error(`OpenRouteService does not support routing mode "${mode}"`);
+
+    const avoidFeatures = this.avoidFeaturesFor(constraints);
+    const res = await fetch(`https://api.openrouteservice.org/v2/directions/${profile}/geojson`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: this.apiKey,
+      },
+      body: JSON.stringify({
+        coordinates: [[start.lng, start.lat]],
+        elevation: true,
+        extra_info: ["waytype"],
+        options: {
+          round_trip: { length: opts.lengthMeters, points: opts.points ?? 5, ...(opts.seed !== undefined ? { seed: opts.seed } : {}) },
+          ...(avoidFeatures ? { avoid_features: avoidFeatures } : {}),
+        },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`OpenRouteService round-trip request failed: ${res.status} ${body.slice(0, 200)}`);
+    }
+    return this.parseResponse((await res.json()) as OrsGeoJsonResponse);
+  }
 }
 
 /** Routes through ORS for its supported modes, manual straight-line
@@ -195,8 +266,20 @@ export class CompositeRoutingProvider implements RoutingProvider {
     return this.ors !== null;
   }
 
-  async route(waypoints: LngLat[], mode: RoutingMode): Promise<RouteResult> {
-    if (mode === "manual" || !this.ors) return this.manual.route(waypoints, mode);
-    return this.ors.route(waypoints, mode);
+  /** Round-trip/loop generation needs a real road/trail network — only
+   * available when an ORS key is configured; there is no manual-mode
+   * equivalent (a "loop" with no network to follow is undefined). */
+  get hasRoundTrip(): boolean {
+    return this.ors !== null;
+  }
+
+  async route(waypoints: LngLat[], mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult> {
+    if (mode === "manual" || !this.ors) return this.manual.route(waypoints, mode, constraints);
+    return this.ors.route(waypoints, mode, constraints);
+  }
+
+  async roundTrip(start: LngLat, opts: RoundTripOptions, mode: RoutingMode, constraints?: RouteConstraints): Promise<RouteResult> {
+    if (!this.ors) throw new Error("Loop routes need a free OpenRouteService API key — not configured yet");
+    return this.ors.roundTrip(start, opts, mode, constraints);
   }
 }

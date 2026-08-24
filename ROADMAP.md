@@ -1,0 +1,31 @@
+# Roadmap
+
+Where Contour (Windows desktop) stands and what's likely next. See [`architecture.md`](./architecture.md) for the full phase-by-phase build log and provider details, and [`CHANGELOG.md`](./CHANGELOG.md) for what shipped in each release.
+
+## Status as of v1.2.0
+
+**Fully shipped and verified:**
+- Globe navigation, four map modes, 3D terrain/contours, search, hiking/ski layers, GPX/GeoJSON/KML routing and analysis, offline maps, GPS location.
+- Weather: keyless hourly forecast panel (verified live); raster map overlay (implemented and error/unavailable-path verified, needs a user-supplied OpenWeatherMap key to see live tiles).
+- Avalanche danger ratings for US/Alaska forecast centers (verified live against the real API).
+- Smart route planning (loop/out-and-back/point-to-point, verified live against ORS) with honest limits on what it can and can't optimise for.
+- Route analysis (steep sections, difficulty estimate, elevation range, waypoint summary — verified live with real elevation data).
+- Measuring tools, coordinate readout/copy/format, waypoint reordering, grid overlay, GeoJSON/KML import, GeoJSON export.
+
+**Known gaps, tracked here rather than silently dropped:**
+- No avalanche coverage outside the US/Alaska — `AvalancheProvider` is a clean interface, so a second regional service (e.g. a verified EAWS-aggregating source for Europe) can be added without touching the UI.
+- KMZ (zipped KML) import isn't supported, only plain KML — would need a zip-handling dependency.
+- The weather map overlay has no forecast/time-travel on the free OpenWeatherMap tier (current conditions only); the Open-Meteo panel is the real forecast source.
+- The smart route planner can't target viewpoints, peaks, or surface type — no wired data source supports that, and the UI says so rather than faking it.
+- The production JS bundle is a single ~1.29 MB chunk (build warns about this) — not yet code-split.
+
+## Candidate next phases
+
+Not commitments — listed in rough order of likely value, for whoever picks up the next phase:
+
+1. **Live route following / navigation** — explicitly out of scope for everything shipped so far (per standing instructions); would need heading, off-route detection, turn-by-turn, and background location handling design before starting.
+2. **Second avalanche region** — verify and wire a European or other-region avalanche source behind the existing `AvalancheProvider` interface.
+3. **Bundle size** — split the JS bundle (dynamic `import()` for MapLibre/route-planning/weather code) so initial load doesn't pull everything at once.
+4. **KMZ import** — add a zip-handling dependency and unwrap to reuse the existing KML parser.
+5. **Offline weather/avalanche** — decide whether/how these should degrade when offline (currently: same "unavailable" treatment as any other network failure, no offline caching since the data is inherently time-sensitive).
+6. **Route-planner elevation-gain targeting** — currently a post-hoc check against a max, not a real optimisation target; would need either a smarter multi-candidate search against ORS or a different routing engine with that capability.

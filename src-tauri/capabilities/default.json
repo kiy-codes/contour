@@ -12,7 +12,9 @@
       "allow": [
         { "url": "https://photon.komoot.io/*" },
         { "url": "https://nominatim.openstreetmap.org/*" },
-        { "url": "https://api.openrouteservice.org/*" }
+        { "url": "https://api.openrouteservice.org/*" },
+        { "url": "https://api.open-meteo.com/*" },
+        { "url": "https://api.avalanche.org/*" }
       ]
     }
   ]

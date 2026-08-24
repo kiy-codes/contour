@@ -3,6 +3,8 @@ import MapModeSwitcher, { type MapModeSwitcherProps } from "./MapModeSwitcher";
 import TerrainControls, { type TerrainControlsProps } from "./TerrainControls";
 import OutdoorControls, { type OutdoorControlsProps } from "./OutdoorControls";
 import SkiControls, { type SkiControlsProps } from "./SkiControls";
+import WeatherControls, { type WeatherControlsProps } from "./WeatherControls";
+import AvalancheControls, { type AvalancheControlsProps } from "./AvalancheControls";
 import { useExitTransition } from "../theme/useExitTransition";
 import "./TerrainControls.css";
 import "./SettingsMenu.css";
@@ -10,7 +12,12 @@ import "./LayersMenu.css";
 
 const CLOSE_ANIMATION_MS = 200;
 
-type LayersMenuProps = MapModeSwitcherProps & TerrainControlsProps & OutdoorControlsProps & SkiControlsProps;
+type LayersMenuProps = MapModeSwitcherProps &
+  TerrainControlsProps &
+  OutdoorControlsProps &
+  SkiControlsProps &
+  WeatherControlsProps &
+  AvalancheControlsProps;
 
 /** Desktop equivalent of the mobile LayersSheet — same four panels
  * (map mode, terrain, outdoor, ski), same props, just collapsed behind one
@@ -85,6 +92,30 @@ export default function LayersMenu(props: LayersMenuProps) {
             onRunNamesEnabledChange={props.onRunNamesEnabledChange}
             liftNamesEnabled={props.liftNamesEnabled}
             onLiftNamesEnabledChange={props.onLiftNamesEnabledChange}
+          />
+          <div className="settings-menu__divider" />
+          <WeatherControls
+            hasOwmKey={props.hasOwmKey}
+            activeMapLayer={props.activeMapLayer}
+            onActiveMapLayerChange={props.onActiveMapLayerChange}
+            tileStatus={props.tileStatus}
+            lastRefreshedAt={props.lastRefreshedAt}
+            forecastEnabled={props.forecastEnabled}
+            onForecastEnabledChange={props.onForecastEnabledChange}
+            forecast={props.forecast}
+            hourIndex={props.hourIndex}
+            onHourIndexChange={props.onHourIndexChange}
+            onRefreshForecast={props.onRefreshForecast}
+          />
+          <div className="settings-menu__divider" />
+          <AvalancheControls
+            avalancheEnabled={props.avalancheEnabled}
+            onAvalancheEnabledChange={props.onAvalancheEnabledChange}
+            avalancheStatus={props.avalancheStatus}
+            avalancheError={props.avalancheError}
+            avalancheRegionCount={props.avalancheRegionCount}
+            avalancheFetchedAt={props.avalancheFetchedAt}
+            onRefreshAvalanche={props.onRefreshAvalanche}
           />
         </div>
       )}
