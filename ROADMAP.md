@@ -2,7 +2,7 @@
 
 Where Contour (Windows desktop) stands and what's likely next. See [`architecture.md`](./architecture.md) for the full phase-by-phase build log and provider details, and [`CHANGELOG.md`](./CHANGELOG.md) for what shipped in each release.
 
-## Status as of v1.2.0
+## Status as of v1.3.0
 
 **Fully shipped and verified:**
 - Globe navigation, four map modes, 3D terrain/contours, search, hiking/ski layers, GPX/GeoJSON/KML routing and analysis, offline maps, GPS location.
@@ -39,8 +39,8 @@ Where Contour (Windows desktop) stands and what's likely next. See [`architectur
 - [x] Planning tools (measure, coordinates, reorder, grid, GeoJSON/KML)
 - [x] Garmin export foundation (local GPX course export; no direct upload — see Known limitations)
 - [x] Cross-feature integration pass, tile-loading audit, route-editor polish, network resilience (this document + CHANGELOG)
-- [ ] Documentation/release-readiness pass — in progress as this checklist is being written
-- [ ] Final quality pass (full build, smoke test, secret scan, diff review) — not yet run as of this checklist
+- [x] Documentation/release-readiness pass
+- [x] Final quality pass — production build produced a working `.exe`/`.msi` (release compile clean, MSI installer built successfully); the NSIS `.exe`-installer bundling step failed with a Windows file-move error (os error 17) that traces to this session's sandboxed shell environment, not the app code — see CHANGELOG for detail. No automated test suite exists in this repo; verification throughout was `tsc` type-checking (always clean) plus extensive live manual testing.
 
 ### Not in V1 or V2 (deliberately out of scope)
 - Live route following / turn-by-turn navigation

@@ -773,7 +773,7 @@ function App() {
         </div>
       )}
       {!isMobile && !isOnline && <div className="offline-badge">Offline</div>}
-      <div className="version-badge">v1.2</div>
+      <div className="version-badge">v1.3</div>
       {gpxNotice && <div className="gpx-notice">{gpxNotice}</div>}
       <RouteStatsPanel
         result={mobileRouteBarShowing ? null : activeResult}

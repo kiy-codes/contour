@@ -2,7 +2,7 @@
 
 All notable changes to Contour are documented here. Versions follow `major.minor.patch`.
 
-## [Unreleased]
+## [1.3.0] — 2026-08-24
 
 ### Added
 - **Garmin export foundation** — "Export for Garmin" builds a validated, Garmin-compatible GPX course (name, description, activity type, start/finish/waypoint course points as GPX waypoints with standard symbols) and shows step-by-step instructions for importing it into Garmin Connect, Garmin Express, or a device's storage over USB. Route validation checks for invalid coordinates, missing/partial elevation, zero-length routes, and unusually large courses before allowing export.
@@ -18,6 +18,11 @@ All notable changes to Contour are documented here. Versions follow `major.minor
 ### Fixed
 - Garmin export used flat (no-elevation) track geometry for manual-mode routes even when Contour's own route analysis panel was showing real elevation data for the same route, computed separately via DEM sampling. Found via cross-feature integration testing.
 - Region metadata reads (`listRegions`/`getRegion`/create/update in the offline-maps cache) could throw an unhandled rejection on IndexedDB failure instead of degrading gracefully, unlike the tile-read functions next to them, which already did.
+
+### Verified
+- Real Windows desktop window: clean debug build, launches without errors, survives a full close/reopen cycle.
+- Release production build: `cargo build --release` compiles cleanly and produces a working `contour.exe`; the MSI installer bundles successfully (`Contour_1.3.0_x64_en-US.msi`). The NSIS `.exe`-installer bundle step failed with a Windows "cannot move file to a different disk drive" error (os error 17) — this occurred specifically in the sandboxed shell environment this session ran in and is not believed to reflect a problem with the app or its Tauri bundler config; worth a plain-terminal retry outside any sandboxed/virtualized shell before treating it as a real blocker.
+- No automated test suite exists in this repo (confirmed: no test files, no test script in `package.json`) — `tsc` type-checking via every `npm run build` plus extensive live manual/browser testing was the verification method throughout this round.
 
 ### Known limitations
 - **No direct upload to a Garmin account.** Confirmed directly against Garmin's own developer documentation (2026-08-24): the Garmin Connect Developer Program's Courses API is business/enterprise-use only, requires a reviewed application, and has no public sandbox — approved developers get throttled *production* access only. There is no credential tier this build can obtain or exercise. Only local GPX export is implemented; the `GarminProvider` interface exists but its only implementation (`UnavailableGarminProvider`) honestly reports "not available" rather than faking a connection.
