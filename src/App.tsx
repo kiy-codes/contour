@@ -12,6 +12,7 @@ import RegionDrawTool from "./map/RegionDrawTool";
 import OfflineDownloadPanel from "./map/OfflineDownloadPanel";
 import OfflineRegionsManager from "./map/OfflineRegionsManager";
 import type { Bbox } from "./offline/regionTiles";
+import { ensureWorldOverviewSeeded } from "./offline/worldOverviewSeed";
 import LocationControl from "./map/LocationControl";
 import { useGeolocation } from "./geo/useGeolocation";
 import GlassDistortionFilter from "./theme/GlassDistortionFilter";
@@ -82,6 +83,14 @@ function App() {
   const mapHandle = useRef<MapCanvasHandle>(null);
   const geolocation = useGeolocation();
   const [mode, setMode] = useState<MapStyleMode>("standard");
+  // First time satellite mode is actually turned on, kick off a one-time
+  // background download of a small world-overview tile set at low zoom —
+  // see worldOverviewSeed.ts for why (no-ops instantly once already done or
+  // without an Esri key; someone who never opens satellite mode never
+  // triggers any of this).
+  useEffect(() => {
+    if (mode === "satellite") void ensureWorldOverviewSeeded();
+  }, [mode]);
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [exaggeration, setExaggeration] = useState(1);
   const [contoursEnabled, setContoursEnabled] = useState(false);

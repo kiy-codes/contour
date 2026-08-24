@@ -1,5 +1,10 @@
 .avalanche-controls {
-  min-width: 220px;
+  /* No min-width — same fix as .weather-controls (see WeatherControls.css):
+     this panel lives inside the fixed-width LayersMenu panel, and forcing a
+     min-width wider than the space actually available there is exactly
+     what was causing horizontal scrolling instead of the content wrapping
+     to fit. */
+  min-width: 0;
 }
 
 .avalanche-controls__hint {

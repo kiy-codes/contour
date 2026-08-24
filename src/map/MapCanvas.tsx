@@ -34,6 +34,7 @@ import type { AvalancheRegionFeature } from "../providers/AvalancheProvider";
 import { avalancheProvider } from "../providers/avalancheInstances";
 import { useAvalancheLayer, type AvalancheStatus } from "../avalanche/useAvalancheLayer";
 import { useGraticule } from "./useGraticule";
+import { WORLD_OVERVIEW_MAX_ZOOM } from "../offline/worldOverviewSeed";
 
 registerTileCacheProtocol();
 
@@ -54,6 +55,8 @@ const DEM_SOURCE_ID = "terrain-dem";
 const HILLSHADE_LAYER_ID = "hillshade-layer";
 const SATELLITE_SOURCE_ID = "satellite-source";
 const SATELLITE_LAYER_ID = "satellite-layer";
+const SATELLITE_BACKDROP_SOURCE_ID = "satellite-backdrop-source";
+const SATELLITE_BACKDROP_LAYER_ID = "satellite-backdrop-layer";
 const TOPO_SOURCE_ID = "topo-source";
 const TOPO_LAYER_ID = "topo-layer";
 const USER_LOCATION_ACCURACY_SOURCE_ID = "user-location-accuracy";
@@ -186,9 +189,31 @@ function addTerrainLayers(map: MapLibreMap) {
 /** Inserted below the base style's symbol layers (like hillshade), so
  * place-name/road labels stay legible on top of the imagery — a hybrid
  * look rather than imagery replacing the whole style. Hidden by default;
- * MapCanvas toggles visibility based on the `mode` prop. */
+ * MapCanvas toggles visibility based on the `mode` prop.
+ *
+ * Also adds a second, coarser "backdrop" raster layer directly underneath
+ * the real satellite layer, from the same tile URLs but capped at
+ * WORLD_OVERVIEW_MAX_ZOOM — MapLibre overzooms a source's own maxzoom tiles
+ * to cover any deeper view zoom, so this backdrop always has *some* real
+ * imagery to show, at whatever zoom is actually requested. Pre-caching
+ * alone (worldOverviewSeed.ts) doesn't achieve this by itself: MapLibre
+ * only shows an ancestor tile as a placeholder if it already fetched and
+ * registered that exact tile into its own in-memory source cache this
+ * session — bytes sitting in IndexedDB that MapLibre never asked for don't
+ * help (confirmed live: pre-seeding alone still left brand-new views
+ * rendering fully transparent). A real, always-active low-zoom source is
+ * what actually gets requested for every view, and having its tiles
+ * pre-seeded on disk is what makes *that* request resolve instantly
+ * instead of waiting on the network. */
 function addSatelliteLayer(map: MapLibreMap) {
   if (!esriApiKey || map.getSource(SATELLITE_SOURCE_ID)) return;
+  map.addSource(SATELLITE_BACKDROP_SOURCE_ID, {
+    type: "raster",
+    tiles: [withCacheScheme(satelliteProvider.getTileUrlTemplate(esriApiKey))],
+    tileSize: 256,
+    maxzoom: WORLD_OVERVIEW_MAX_ZOOM,
+    attribution: satelliteProvider.attribution.html,
+  });
   map.addSource(SATELLITE_SOURCE_ID, {
     type: "raster",
     tiles: [withCacheScheme(satelliteProvider.getTileUrlTemplate(esriApiKey))],
@@ -197,6 +222,11 @@ function addSatelliteLayer(map: MapLibreMap) {
     attribution: satelliteProvider.attribution.html,
   });
   const firstSymbolId = map.getStyle().layers?.find((l) => l.type === "symbol")?.id;
+  // Backdrop added first so it stacks below the main satellite layer.
+  map.addLayer(
+    { id: SATELLITE_BACKDROP_LAYER_ID, type: "raster", source: SATELLITE_BACKDROP_SOURCE_ID, layout: { visibility: "none" } },
+    firstSymbolId,
+  );
   map.addLayer(
     { id: SATELLITE_LAYER_ID, type: "raster", source: SATELLITE_SOURCE_ID, layout: { visibility: "none" } },
     firstSymbolId,
@@ -518,8 +548,13 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           // Larger in-memory decoded-tile pool (default 512) — this is
           // separate from the on-disk cache; a bigger one means panning
           // back over recently-seen area redraws from memory instead of
-          // re-decoding from disk/network.
-          maxTileCacheSize: 2000,
+          // re-decoding from disk/network. Bumped again (2000 -> 4000):
+          // modern GPUs have plenty of headroom for this, and keeping more
+          // recently-viewed tiles decoded and ready — especially satellite
+          // imagery, the heaviest/slowest layer to re-fetch — directly
+          // reduces how often panning back over an area shows a blank gap
+          // while it re-downloads something it already had a moment ago.
+          maxTileCacheSize: 4000,
           // Skip revalidation round-trips for tiles our own cache already
           // has — we manage staleness via the LRU cap, not HTTP expiry.
           refreshExpiredTiles: false,
@@ -616,7 +651,11 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
 
     useEffect(() => {
       if (!mapReady || !mapReady.getLayer(SATELLITE_LAYER_ID)) return;
-      mapReady.setLayoutProperty(SATELLITE_LAYER_ID, "visibility", mode === "satellite" ? "visible" : "none");
+      const visibility = mode === "satellite" ? "visible" : "none";
+      mapReady.setLayoutProperty(SATELLITE_LAYER_ID, "visibility", visibility);
+      if (mapReady.getLayer(SATELLITE_BACKDROP_LAYER_ID)) {
+        mapReady.setLayoutProperty(SATELLITE_BACKDROP_LAYER_ID, "visibility", visibility);
+      }
     }, [mode, mapReady]);
 
     useEffect(() => {
