@@ -12,6 +12,8 @@ Where Contour (Windows desktop) stands and what's likely next. See [`architectur
 - Route analysis (steep sections, difficulty estimate, elevation range, waypoint summary — verified live with real elevation data).
 - Measuring tools, coordinate readout/copy/format, waypoint reordering, grid overlay, GeoJSON/KML import, GeoJSON export.
 
+- Garmin: validated GPX course export + local transfer instructions (real, working). Direct account upload is a designed-but-unimplemented interface (`GarminProvider`) — Garmin's Courses API is business-only, application-gated, and has no sandbox (confirmed live against Garmin's developer site), so there is nothing to implement against yet.
+
 **Known gaps, tracked here rather than silently dropped:**
 - No avalanche coverage outside the US/Alaska — `AvalancheProvider` is a clean interface, so a second regional service (e.g. a verified EAWS-aggregating source for Europe) can be added without touching the UI.
 - KMZ (zipped KML) import isn't supported, only plain KML — would need a zip-handling dependency.
@@ -29,3 +31,4 @@ Not commitments — listed in rough order of likely value, for whoever picks up 
 4. **KMZ import** — add a zip-handling dependency and unwrap to reuse the existing KML parser.
 5. **Offline weather/avalanche** — decide whether/how these should degrade when offline (currently: same "unavailable" treatment as any other network failure, no offline caching since the data is inherently time-sensitive).
 6. **Route-planner elevation-gain targeting** — currently a post-hoc check against a max, not a real optimisation target; would need either a smarter multi-candidate search against ORS or a different routing engine with that capability.
+7. **Real Garmin Connect upload** — needs a completed, approved Garmin Connect Developer Program business application (Garmin's own process, outside this codebase) before `GarminProvider` can get a real implementation. When that exists: OAuth 2.0 Authorization Code + PKCE (no embedded client secret), token storage via a proper OS-backed secure store rather than browser localStorage (nothing in this app currently has that — would need adding, e.g. a small Tauri command backed by the Windows Credential Manager), and the upload/list/delete methods filled in behind the existing interface.

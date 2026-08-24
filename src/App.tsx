@@ -42,6 +42,7 @@ import type { RouteConstraints, RoutingMode } from "./providers/RoutingProvider"
 import { formatCoordinate, coordinateToClipboardText } from "./geo/coordinateFormat";
 import { useCoordinateFormat } from "./geo/CoordinateFormatContext";
 import MeasureTool, { type MeasureMode } from "./map/MeasureTool";
+import GarminExportPanel from "./map/GarminExportPanel";
 import "./App.css";
 
 const geocodingProvider = new CompositeGeocodingProvider();
@@ -132,6 +133,7 @@ function App() {
   const [measureTotalMeters, setMeasureTotalMeters] = useState(0);
   const [measureAreaSqMeters, setMeasureAreaSqMeters] = useState<number | null>(null);
   const [gridEnabled, setGridEnabled] = useState(false);
+  const [garminExportOpen, setGarminExportOpen] = useState(false);
 
   // Whichever route is actually on screen right now — an imported track
   // takes precedence over an in-progress computed route.
@@ -557,6 +559,7 @@ function App() {
             onImportGpx={handleImportGpx}
             onExportGpx={handleExportGpx}
             onExportGeoJson={handleExportGeoJson}
+            onExportGarmin={() => setGarminExportOpen(true)}
             onUndo={() => routeDispatch({ type: "UNDO" })}
             onRedo={() => routeDispatch({ type: "REDO" })}
             onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
@@ -649,6 +652,7 @@ function App() {
             onImportGpx={handleImportGpx}
             onExportGpx={handleExportGpx}
             onExportGeoJson={handleExportGeoJson}
+            onExportGarmin={() => setGarminExportOpen(true)}
             onUndo={() => routeDispatch({ type: "UNDO" })}
             onRedo={() => routeDispatch({ type: "REDO" })}
             onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
@@ -676,6 +680,14 @@ function App() {
                 setRoutePlannerOpen(false);
                 setPickPointActive(false);
               }}
+            />
+          )}
+          {garminExportOpen && activeResult && (
+            <GarminExportPanel
+              result={activeResult}
+              waypoints={routeState.waypoints}
+              defaultName={importedRoute ? importedRouteName : "Route"}
+              onClose={() => setGarminExportOpen(false)}
             />
           )}
         </div>

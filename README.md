@@ -23,6 +23,7 @@ See [`architecture.md`](./architecture.md) for the provider architecture, data s
 - **Offline maps** — draw a region on the map, pick zoom range and layers (base map, satellite, terrain, topo, hiking/ski), and download it for offline use. Includes progress tracking (tiles, size, speed), pause/resume/cancel, automatic online/offline fallback, and a Downloaded Regions manager (rename/update/delete).
 - **Planning tools** — measure distance/area, cursor coordinate readout with copy-to-clipboard and decimal/DMS format toggle, draggable waypoint reordering with undo/redo, and a best-effort lat/lng grid overlay.
 - **Import/export** — GPX, GeoJSON, and KML import; GPX 1.1 and GeoJSON export, all via native file dialogs.
+- **Garmin export** — "Export for Garmin" builds a validated, Garmin-compatible GPX course (name, description, activity type, start/finish/waypoint course points) and walks you through importing it into Garmin Connect, Garmin Express, or your device's storage. **This is local file export only** — there is no direct upload to a Garmin account yet; see [Garmin integration status](#garmin-integration-status) below for why and what's next.
 - **Local caching** — IndexedDB-backed tile/data cache with size-capped LRU eviction and a manual clear option; downloaded offline regions are pinned and survive normal eviction.
 - **Liquid Glass UI** — three selectable themes (Dark / Light / Liquid Glass), consistent rounded glass-styled controls throughout.
 
@@ -97,6 +98,18 @@ npm run tauri dev
 ```bash
 npm run tauri build
 ```
+
+## Garmin integration status
+
+Contour can export a validated, Garmin-compatible GPX course file today — that part is real and works with no setup. **Direct upload to a Garmin Connect account does not work and isn't claimed to.**
+
+Why: Garmin's Courses API (part of the [Garmin Connect Developer Program](https://developer.garmin.com/gc-developer-program/)) is business/enterprise-use only, requires a reviewed application, and — confirmed directly against Garmin's own developer site — has **no public sandbox or trial tier**; approved developers get "development against the production environment with throttled access," full stop. There's no tier of that an individual open-source app can exercise without going through Garmin's business application process.
+
+So the app ships:
+- A working **local export path**: name/description/activity-type picker, route validation (invalid coordinates, missing elevation, oversized routes), a standards-compliant GPX 1.1 course file, and on-screen instructions for getting it onto a device via Garmin Connect's own Import feature, Garmin Express, or USB drag-and-drop — none of which need any API access at all.
+- A clean `GarminProvider` interface (`src/garmin/GarminProvider.ts`) for connect/upload/list/delete, so a real OAuth 2.0 integration can be dropped in later without touching the UI — but the only implementation shipped (`UnavailableGarminProvider`) honestly reports "not available" for every method rather than faking success.
+
+No Garmin credentials or configuration are needed or possible in this build — there's nothing to put in `.env`.
 
 ## Recommended IDE Setup
 

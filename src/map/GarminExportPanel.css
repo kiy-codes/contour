@@ -1,0 +1,110 @@
+.garmin-export-panel {
+  min-width: 260px;
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+}
+
+.garmin-export-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.garmin-export-panel__header .place-info-panel__close {
+  position: static;
+  width: 22px;
+  height: 22px;
+}
+
+.garmin-export-panel__connection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.garmin-export-panel__status {
+  align-self: flex-start;
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--ui-fill);
+  color: var(--text-secondary);
+}
+
+.garmin-export-panel__status--connected {
+  background: rgba(76, 175, 120, 0.25);
+  color: #4caf78;
+}
+
+.garmin-export-panel__hint {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.garmin-export-panel__hint--error {
+  color: #e2662d;
+}
+
+.garmin-export-panel__input,
+.garmin-export-panel__textarea {
+  flex: 1;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 0.85em;
+}
+
+.garmin-export-panel__desc-row {
+  align-items: flex-start;
+  cursor: default;
+}
+
+.garmin-export-panel__textarea {
+  resize: vertical;
+}
+
+.garmin-export-panel__row-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.garmin-export-panel__issues {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75em;
+  line-height: 1.4;
+}
+
+.garmin-export-panel__issues p {
+  margin: 0;
+}
+
+.garmin-export-panel__issues--error {
+  color: #e2662d;
+}
+
+.garmin-export-panel__issues--warning {
+  color: var(--text-secondary);
+}
+
+.garmin-export-panel__saved {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--ui-fill);
+  font-size: 0.8em;
+}
+
+.garmin-export-panel__saved p {
+  margin: 0;
+}

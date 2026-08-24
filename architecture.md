@@ -28,6 +28,7 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 | `WeatherMapProvider` | `WeatherProvider.ts` | Raster weather map tiles (temp/precip/wind/clouds/pressure) |
 | `WeatherForecastProvider` | `WeatherProvider.ts` | Point/time hourly forecast data |
 | `AvalancheProvider` | `AvalancheProvider.ts` | Regional avalanche danger ratings |
+| `GarminProvider` | `src/garmin/GarminProvider.ts` | Garmin Connect course upload (interface only — see below, no credentialed implementation exists) |
 
 ## Cost / provider table (V1 target: £0/month mandatory)
 
@@ -56,6 +57,7 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 - OpenWeatherMap Weather Maps 1.0's free tier is current-conditions-only — no forecast/historical time parameter, so the map overlay can't show a future/past snapshot (the Open-Meteo forecast panel is the real forecast source, and is entirely separate/keyless).
 - avalanche.org's public map-layer endpoint only covers US/Alaska forecast centers, gives one overall rating per center (not a full elevation-band/aspect breakdown), and its written terms of use weren't independently reviewed beyond confirming it's the same live endpoint avalanche.org's own site uses — worth a proper terms check before high-volume or commercial use.
 - ORS's `round_trip` (loop) option treats a requested distance as approximate, not exact, since it has to follow real trails/roads. ORS's `steepness_difficulty` weighting parameter is accepted by the API but its exact effect direction couldn't be independently confirmed from documentation, so it is deliberately not exposed in the smart route planner — only the unambiguous `avoid_features` (steps, fords) constraints are.
+- Garmin: the Connect Developer Program's Courses API is business/enterprise-use only, needs a reviewed application, and has no sandbox (confirmed live against developer.garmin.com, 2026-08-24 — approved developers get throttled *production* access, nothing less). No credential tier of it is obtainable here, so `GarminProvider` ships as an interface plus an `UnavailableGarminProvider` implementation only — real upload/connect/list/delete are unimplemented, not faked. Local GPX course export (`src/garmin/garminGpxExport.ts`) needs no Garmin access at all and is fully working.
 
 ## Development phases
 
@@ -80,3 +82,4 @@ Every external data dependency sits behind a TypeScript interface in [`src/provi
 17. Smart route planning — loop/out-and-back/point-to-point shapes, activity type, avoid-steps/fords constraints, loop alternatives, honest disabled state for unsupported preferences (done, v1.2 — round_trip and avoid_features verified live against ORS before implementation)
 18. Route analysis — elevation range, steep-section detection, explained difficulty estimate, waypoint summary (done, v1.2 — verified live with real DEM-derived elevation data on a real route)
 19. Planning tools — measure distance/area, coordinate readout + clipboard copy + DD/DMS toggle, waypoint reordering with undo/redo, lat/lng grid overlay, GeoJSON/KML import, GeoJSON export (done, v1.2)
+20. Garmin integration foundation — Garmin-ready route/course model (course points, activity type), validated GPX course export with in-app transfer instructions, `GarminProvider` interface for a future OAuth-based Courses API integration (done: local export; blocked: real upload/connect — no Garmin Developer Program credentials exist, confirmed no sandbox tier is available, see Known limitations)

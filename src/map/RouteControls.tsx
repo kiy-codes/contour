@@ -22,6 +22,7 @@ export interface RouteControlsProps {
   onImportGpx: () => void;
   onExportGpx: () => void;
   onExportGeoJson?: () => void;
+  onExportGarmin?: () => void;
   /** Swaps the floating top-right panel for a FAB (collapsed) / full-width
    * bottom bar (editing) — the floating panel is what made route editing
    * unusable on a phone screen, covering most of the map. */
@@ -61,6 +62,7 @@ export default function RouteControls({
   onImportGpx,
   onExportGpx,
   onExportGeoJson,
+  onExportGarmin,
   isMobile = false,
   hasLocationFix = false,
   onStartFromLocation,
@@ -112,6 +114,11 @@ export default function RouteControls({
           <button onClick={onExportGpx}>Export GPX</button>
           {onExportGeoJson && <button onClick={onExportGeoJson}>Export GeoJSON</button>}
         </div>
+        {onExportGarmin && (
+          <div className="route-controls__row">
+            <button onClick={onExportGarmin}>Export for Garmin</button>
+          </div>
+        )}
         <div className="route-controls__row">
           <button onClick={onImportGpx}>Import track</button>
           <button onClick={onClear}>Clear</button>
@@ -177,6 +184,13 @@ export default function RouteControls({
           </button>
         )}
       </div>
+      {onExportGarmin && (
+        <div className="route-controls__row">
+          <button onClick={onExportGarmin} disabled={!hasWaypoints}>
+            Export for Garmin
+          </button>
+        </div>
+      )}
       <div className="route-controls__row">
         <button onClick={onImportGpx}>Import track</button>
       </div>

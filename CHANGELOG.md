@@ -2,6 +2,16 @@
 
 All notable changes to Contour are documented here. Versions follow `major.minor.patch`.
 
+## [Unreleased]
+
+### Added
+- **Garmin export foundation** — "Export for Garmin" builds a validated, Garmin-compatible GPX course (name, description, activity type, start/finish/waypoint course points as GPX waypoints with standard symbols) and shows step-by-step instructions for importing it into Garmin Connect, Garmin Express, or a device's storage over USB. Route validation checks for invalid coordinates, missing/partial elevation, zero-length routes, and unusually large courses before allowing export.
+- A `GarminProvider` interface (`src/garmin/GarminProvider.ts`) for a future OAuth-based Garmin Connect Developer Program integration (connect, connection status, upload/list/delete course, disconnect) — isolated from core route-planning code so it can be implemented later without touching the route editor.
+
+### Known limitations
+- **No direct upload to a Garmin account.** Confirmed directly against Garmin's own developer documentation (2026-08-24): the Garmin Connect Developer Program's Courses API is business/enterprise-use only, requires a reviewed application, and has no public sandbox — approved developers get throttled *production* access only. There is no credential tier this build can obtain or exercise. Only local GPX export is implemented; the `GarminProvider` interface exists but its only implementation (`UnavailableGarminProvider`) honestly reports "not available" rather than faking a connection.
+- No Garmin proprietary GPX extension schema is used (only standard GPX 1.1 track/waypoint elements), since that schema wasn't independently verified.
+
 ## [1.2.0] — 2026-08-24
 
 ### Added
