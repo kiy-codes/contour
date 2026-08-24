@@ -506,6 +506,13 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           zoom: 1.8,
           pitch: 0,
           bearing: 0,
+          // MapLibre's own default caps pitch at 60° — noticeably short of
+          // a real low-angle look at 3D terrain. 80° gives a lot more room
+          // to tilt while staying safely below the ~85° practical ceiling
+          // where near/far-plane clipping artifacts start creeping in;
+          // applies to both 2D and 3D terrain modes and the globe
+          // projection alike.
+          maxPitch: 80,
           canvasContextAttributes: { antialias: true },
           attributionControl: false,
           // Larger in-memory decoded-tile pool (default 512) — this is
