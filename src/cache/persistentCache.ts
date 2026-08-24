@@ -351,24 +351,40 @@ export async function cacheSetMaxBytes(maxBytes: number): Promise<void> {
 // ---------------------------------------------------------------------------
 // Offline regions
 
+// Region metadata reads/writes degrade to a safe empty/no-op result on any
+// IndexedDB failure (corrupted DB, storage quota, private-browsing
+// restrictions) rather than throwing — same convention as cacheGetBytes/
+// cacheHas/cachePutBytes above. The Offline Regions Manager UI would
+// otherwise have no way to recover from an unhandled rejection here; an
+// empty list reads as "no regions yet", which is honest enough given the
+// alternative is a broken panel.
 export async function createRegion(region: OfflineRegion): Promise<void> {
-  const db = await openDb();
-  const tx = db.transaction(REGION_STORE, "readwrite");
-  tx.objectStore(REGION_STORE).put(region);
-  await txDone(tx);
+  try {
+    const db = await openDb();
+    const tx = db.transaction(REGION_STORE, "readwrite");
+    tx.objectStore(REGION_STORE).put(region);
+    await txDone(tx);
+  } catch {
+    // Best-effort — the download itself already succeeded; losing the
+    // region row means it just won't show up in the manager.
+  }
 }
 
 export async function updateRegion(id: string, patch: Partial<Omit<OfflineRegion, "id">>): Promise<void> {
-  const db = await openDb();
-  const tx = db.transaction(REGION_STORE, "readwrite");
-  const store = tx.objectStore(REGION_STORE);
-  const existing = (await reqToPromise(store.get(id))) as OfflineRegion | undefined;
-  if (!existing) {
+  try {
+    const db = await openDb();
+    const tx = db.transaction(REGION_STORE, "readwrite");
+    const store = tx.objectStore(REGION_STORE);
+    const existing = (await reqToPromise(store.get(id))) as OfflineRegion | undefined;
+    if (!existing) {
+      await txDone(tx);
+      return;
+    }
+    store.put({ ...existing, ...patch, id, updatedAt: Date.now() } satisfies OfflineRegion);
     await txDone(tx);
-    return;
+  } catch {
+    // Best-effort, see createRegion.
   }
-  store.put({ ...existing, ...patch, id, updatedAt: Date.now() } satisfies OfflineRegion);
-  await txDone(tx);
 }
 
 export async function renameRegion(id: string, name: string): Promise<void> {
@@ -376,19 +392,27 @@ export async function renameRegion(id: string, name: string): Promise<void> {
 }
 
 export async function getRegion(id: string): Promise<OfflineRegion | null> {
-  const db = await openDb();
-  const tx = db.transaction(REGION_STORE, "readonly");
-  const row = (await reqToPromise(tx.objectStore(REGION_STORE).get(id))) as OfflineRegion | undefined;
-  await txDone(tx);
-  return row ?? null;
+  try {
+    const db = await openDb();
+    const tx = db.transaction(REGION_STORE, "readonly");
+    const row = (await reqToPromise(tx.objectStore(REGION_STORE).get(id))) as OfflineRegion | undefined;
+    await txDone(tx);
+    return row ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function listRegions(): Promise<OfflineRegion[]> {
-  const db = await openDb();
-  const tx = db.transaction(REGION_STORE, "readonly");
-  const rows = (await reqToPromise(tx.objectStore(REGION_STORE).getAll())) as OfflineRegion[];
-  await txDone(tx);
-  return rows.sort((a, b) => b.createdAt - a.createdAt);
+  try {
+    const db = await openDb();
+    const tx = db.transaction(REGION_STORE, "readonly");
+    const rows = (await reqToPromise(tx.objectStore(REGION_STORE).getAll())) as OfflineRegion[];
+    await txDone(tx);
+    return rows.sort((a, b) => b.createdAt - a.createdAt);
+  } catch {
+    return [];
+  }
 }
 
 /** Sums the real on-disk size of exactly the tiles this region owns —

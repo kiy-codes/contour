@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type * as maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import type { AvalancheProvider, AvalancheRegionCollection, AvalancheRegionFeature } from "../providers/AvalancheProvider";
+import { describeNetworkError } from "../net/fetchTimeout";
 
 const SOURCE_ID = "avalanche-regions";
 const FILL_LAYER_ID = "avalanche-regions-fill";
@@ -100,7 +101,7 @@ export function useAvalancheLayer(
       } catch (err) {
         if (controller.signal.aborted) return;
         setStatus("error");
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeNetworkError(err));
       }
     };
     void load();

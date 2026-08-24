@@ -7,6 +7,7 @@ import type { RoutingProvider, RouteResult } from "../providers/RoutingProvider"
 import type { OutdoorDataProvider } from "../providers/OutdoorDataProvider";
 import type { LngLat } from "../providers/types";
 import { nearestPointOnLines } from "../geo/nearestPointOnLine";
+import { describeNetworkError } from "../net/fetchTimeout";
 
 const ROUTE_SOURCE_ID = "route-line-source";
 const ROUTE_CASING_ID = "route-line-casing";
@@ -210,7 +211,7 @@ export function useRouteLayer(
         onRouteComputedRef.current(result, null);
       } catch (err) {
         if (cancelled) return;
-        onRouteComputedRef.current(null, err instanceof Error ? err.message : String(err));
+        onRouteComputedRef.current(null, describeNetworkError(err));
       }
     }, 400);
 

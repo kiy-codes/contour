@@ -1,5 +1,8 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import type { AttributionEntry, LngLat } from "./types";
+import { withTimeout } from "../net/fetchTimeout";
+
+const REQUEST_TIMEOUT_MS = 15000;
 
 // ---------------------------------------------------------------------------
 // Raster weather map overlays — visual tile layers drawn over the map
@@ -141,10 +144,13 @@ export class OpenMeteoProvider implements WeatherForecastProvider {
       forecast_days: "3",
       timezone: "auto",
     });
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, { signal });
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
+      signal: withTimeout(signal, REQUEST_TIMEOUT_MS),
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`Open-Meteo request failed: ${res.status} ${body.slice(0, 200)}`);
+      const rateLimited = res.status === 429 ? " (rate limited — try again shortly)" : "";
+      throw new Error(`Open-Meteo request failed: ${res.status}${rateLimited} ${body.slice(0, 200)}`);
     }
     const data = (await res.json()) as OpenMeteoResponse;
     const h = data.hourly;

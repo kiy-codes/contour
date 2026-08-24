@@ -3,6 +3,7 @@ import type { LngLat } from "../providers/types";
 import type { RouteResult, RouteConstraints } from "../providers/RoutingProvider";
 import type { RoutingMode } from "../providers/RoutingProvider";
 import { buildOutAndBack } from "../routing/routePlanning";
+import { describeNetworkError } from "../net/fetchTimeout";
 import { useUnits } from "../units/UnitsContext";
 import "./TerrainControls.css";
 import "./RoutePlannerPanel.css";
@@ -112,7 +113,7 @@ export default function RoutePlannerPanel({
       checkTargets(result);
       onGenerated(result, shapeLabel(shape));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeNetworkError(err));
     } finally {
       setGenerating(false);
     }
@@ -127,7 +128,7 @@ export default function RoutePlannerPanel({
       const result = await planRoundTrip(distanceKm * 1000, activity, constraints, seed);
       setCandidates((c) => [...c, { seed, result }]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeNetworkError(err));
     } finally {
       setGenerating(false);
     }

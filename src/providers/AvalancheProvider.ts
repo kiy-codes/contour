@@ -1,5 +1,8 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import type { AttributionEntry } from "./types";
+import { withTimeout } from "../net/fetchTimeout";
+
+const REQUEST_TIMEOUT_MS = 15000;
 
 export interface AvalancheRegionProperties {
   name: string;
@@ -64,10 +67,13 @@ export class AvalancheOrgProvider implements AvalancheProvider {
   };
 
   async getRegions(signal?: AbortSignal): Promise<AvalancheRegionCollection> {
-    const res = await fetch("https://api.avalanche.org/v2/public/products/map-layer", { signal });
+    const res = await fetch("https://api.avalanche.org/v2/public/products/map-layer", {
+      signal: withTimeout(signal, REQUEST_TIMEOUT_MS),
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`avalanche.org request failed: ${res.status} ${body.slice(0, 200)}`);
+      const rateLimited = res.status === 429 ? " (rate limited — try again shortly)" : "";
+      throw new Error(`avalanche.org request failed: ${res.status}${rateLimited} ${body.slice(0, 200)}`);
     }
     return (await res.json()) as AvalancheRegionCollection;
   }

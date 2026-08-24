@@ -1,6 +1,9 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import type { LngLat, LngLatElevation } from "./types";
 import { pathLength } from "../geo/distance";
+import { withTimeout } from "../net/fetchTimeout";
+
+const REQUEST_TIMEOUT_MS = 20000; // routing calls (esp. round_trip) legitimately take longer than a simple GET
 
 export type RoutingMode = "walking" | "hiking" | "cycling" | "driving" | "manual";
 
@@ -202,10 +205,12 @@ export class OpenRouteServiceProvider implements RoutingProvider {
         extra_info: ["waytype"],
         ...(avoidFeatures ? { options: { avoid_features: avoidFeatures } } : {}),
       }),
+      signal: withTimeout(undefined, REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`OpenRouteService request failed: ${res.status} ${body.slice(0, 200)}`);
+      const rateLimited = res.status === 429 ? " (rate limited — you've hit ORS's free-tier request limit, try again shortly)" : "";
+      throw new Error(`OpenRouteService request failed: ${res.status}${rateLimited} ${body.slice(0, 200)}`);
     }
     return this.parseResponse((await res.json()) as OrsGeoJsonResponse);
   }
@@ -239,10 +244,12 @@ export class OpenRouteServiceProvider implements RoutingProvider {
           ...(avoidFeatures ? { avoid_features: avoidFeatures } : {}),
         },
       }),
+      signal: withTimeout(undefined, REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`OpenRouteService round-trip request failed: ${res.status} ${body.slice(0, 200)}`);
+      const rateLimited = res.status === 429 ? " (rate limited — you've hit ORS's free-tier request limit, try again shortly)" : "";
+      throw new Error(`OpenRouteService round-trip request failed: ${res.status}${rateLimited} ${body.slice(0, 200)}`);
     }
     return this.parseResponse((await res.json()) as OrsGeoJsonResponse);
   }

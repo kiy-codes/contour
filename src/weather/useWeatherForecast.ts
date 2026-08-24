@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LngLat } from "../providers/types";
 import type { WeatherForecast, WeatherForecastProvider } from "../providers/WeatherProvider";
+import { describeNetworkError } from "../net/fetchTimeout";
 
 export type WeatherForecastStatus = "idle" | "loading" | "ready" | "error";
 
@@ -81,7 +82,7 @@ export function useWeatherForecast(
           setState({ status: "ready", data: cached.data, error: null, isStale: true });
           return;
         }
-        setState({ status: "error", data: null, error: err instanceof Error ? err.message : String(err), isStale: false });
+        setState({ status: "error", data: null, error: describeNetworkError(err), isStale: false });
       });
 
     return () => controller.abort();
