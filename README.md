@@ -1,6 +1,6 @@
 # Contour
 
-**v2.0.0** — A premium 3D world mapping desktop app: Google Earth-style globe navigation, AllTrails-style hiking/route planning, live weather and avalanche danger overlays, ski resort mapping, offline maps, GPS location, smart route planning, Garmin course export, and GPX/GeoJSON export, built on free/open geographic data.
+**v2.1.0** — A premium 3D world mapping desktop app: Google Earth-style globe navigation, AllTrails-style hiking/route planning, live weather and avalanche danger overlays, ski resort mapping, offline maps, GPS location, smart route planning, Garmin course export, and GPX/GeoJSON export, built on free/open geographic data.
 
 Windows desktop app built with [Tauri v2](https://tauri.app) + React + TypeScript + [MapLibre GL JS](https://maplibre.org).
 

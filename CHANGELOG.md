@@ -2,6 +2,27 @@
 
 All notable changes to Contour are documented here. Versions follow `major.minor.patch`.
 
+## [2.1.0] — 2026-08-24
+
+### Added
+- **Low-res satellite backdrop** — a second, coarser raster layer under the main satellite layer, from the same tile source but capped at zoom 5. MapLibre overzooms a source's own max-zoom tiles to cover any deeper view, so this backdrop always has *something* real to show, at whatever zoom is actually requested, instead of the transparent gap a fresh jump or fast pan previously left. Paired with a one-time background pre-seed of the whole world at that same shallow zoom range (1,365 tiles, ~11MB) — reuses the existing offline-region download engine wholesale, so it's a real, visible, deletable entry in the Downloaded Regions manager rather than a parallel system. Verified end-to-end with an artificially delayed network: a blurry-but-real backdrop shows immediately, with sharp imagery filling in on top as it arrives.
+- Max camera pitch raised from MapLibre's default 60° to 80°, in 3D terrain mode, flat 2D mode, and the globe world view — verified live with no rendering artifacts in any of the three.
+
+### Changed
+- `maxTileCacheSize` raised 2000 → 4000, keeping more recently-viewed tiles decoded and ready instead of re-fetching.
+- Measure distance/area and Grid triggers now match the Layers/GPS glass-pill button style, instead of the flatter in-panel chip style meant for compact selection lists.
+- Default 3D Terrain exaggeration changed from 1.5x to 1x.
+- Layers menu panel now scrolls (six sections can run taller than a modest window), with `overscroll-behavior: contain` so scrolling it never chains through to the map underneath.
+- Liquid Glass theme: every text node now guarantees a text-shadow via one root-level declaration instead of N per-panel copies; every icon gets a drop-shadow (text-shadow doesn't affect SVGs); checkbox interiors reskinned to match the glass aesthetic instead of the bare OS checkbox. Scoped to the Liquid Glass theme only — Dark/Light untouched.
+
+### Fixed
+- Avalanche panel forced itself wider than the Layers menu had room for, causing horizontal scrolling — same root cause (and fix) as the weather panel's earlier min-width bug.
+- Exaggeration slider row and weather-map section could overflow past the Layers panel's right edge — flex items weren't allowed to shrink below their intrinsic content width, and the weather panel had its own min-width wider than the space actually available.
+- The Layers button's "open" blue background lost a CSS specificity fight to its own `:hover` rule (two selectors beat one), so hovering right after opening it — the common case — silently reverted it to the plain hover fill instead of staying blue. Same fix applied everywhere else the pattern was reused (map mode switcher, route mode buttons, weather/route-planner/Garmin activity pills).
+
+### Verified
+- Real Windows desktop window, both a standard desktop viewport and a narrow/tall (portrait-monitor-style) one.
+
 ## [2.0.0] — 2026-08-24
 
 This is Contour's V2 release — the full round of work described below, on top of the V1 core (globe navigation, terrain, search, hiking/ski layers, route planning, GPX export, offline maps, GPS location). See [`ROADMAP.md`](./ROADMAP.md) for the V1/V2 release checklist.

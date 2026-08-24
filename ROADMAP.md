@@ -2,7 +2,7 @@
 
 Where Contour (Windows desktop) stands and what's likely next. See [`architecture.md`](./architecture.md) for the full phase-by-phase build log and provider details, and [`CHANGELOG.md`](./CHANGELOG.md) for what shipped in each release.
 
-## Status as of v2.0.0
+## Status as of v2.1.0
 
 **Fully shipped and verified:**
 - Globe navigation, four map modes, 3D terrain/contours, search, hiking/ski layers, GPX/GeoJSON/KML routing and analysis, offline maps, GPS location.
@@ -13,6 +13,7 @@ Where Contour (Windows desktop) stands and what's likely next. See [`architectur
 - Measuring tools, coordinate readout/copy/format, waypoint reordering, grid overlay, GeoJSON/KML import, GeoJSON export.
 - Garmin: validated GPX course export + local transfer instructions (real, working). Direct account upload is a designed-but-unimplemented interface (`GarminProvider`) — Garmin's Courses API is business-only, application-gated, and has no sandbox (confirmed live against Garmin's developer site), so there is nothing to implement against yet.
 - Tile-fetch concurrency bounding, timeouts + rate-limit-aware messages on every network provider, mutual-exclusion between map click-tools, confirm-before-discard on Clear, and a corrupt-data fallback for offline-region metadata reads.
+- Low-res world satellite backdrop + pre-seed (no more transparent gaps on a fresh jump/fast pan), max camera pitch raised to 80°, Layers menu scroll/overflow/theme-consistency fixes (see CHANGELOG for the v2.1.0 detail).
 
 **Known gaps, tracked here rather than silently dropped:**
 - No avalanche coverage outside the US/Alaska — `AvalancheProvider` is a clean interface, so a second regional service (e.g. a verified EAWS-aggregating source for Europe) can be added without touching the UI.
