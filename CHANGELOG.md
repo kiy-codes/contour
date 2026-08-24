@@ -2,7 +2,9 @@
 
 All notable changes to Contour are documented here. Versions follow `major.minor.patch`.
 
-## [1.3.0] — 2026-08-24
+## [2.0.0] — 2026-08-24
+
+This is Contour's V2 release — the full round of work described below, on top of the V1 core (globe navigation, terrain, search, hiking/ski layers, route planning, GPX export, offline maps, GPS location). See [`ROADMAP.md`](./ROADMAP.md) for the V1/V2 release checklist.
 
 ### Added
 - **Garmin export foundation** — "Export for Garmin" builds a validated, Garmin-compatible GPX course (name, description, activity type, start/finish/waypoint course points as GPX waypoints with standard symbols) and shows step-by-step instructions for importing it into Garmin Connect, Garmin Express, or a device's storage over USB. Route validation checks for invalid coordinates, missing/partial elevation, zero-length routes, and unusually large courses before allowing export.

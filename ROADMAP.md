@@ -2,7 +2,7 @@
 
 Where Contour (Windows desktop) stands and what's likely next. See [`architecture.md`](./architecture.md) for the full phase-by-phase build log and provider details, and [`CHANGELOG.md`](./CHANGELOG.md) for what shipped in each release.
 
-## Status as of v1.3.0
+## Status as of v2.0.0
 
 **Fully shipped and verified:**
 - Globe navigation, four map modes, 3D terrain/contours, search, hiking/ski layers, GPX/GeoJSON/KML routing and analysis, offline maps, GPS location.
