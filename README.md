@@ -4,7 +4,7 @@
 
 Windows desktop app built with [Tauri v2](https://tauri.app) + React + TypeScript + [MapLibre GL JS](https://maplibre.org).
 
-See [`architecture.md`](./architecture.md) for the provider architecture, data sources, and licensing/cost notes, and [`CHANGELOG.md`](./CHANGELOG.md) for release history.
+See [`architecture.md`](./architecture.md) for the provider architecture, data sources, and licensing/cost notes; [`CHANGELOG.md`](./CHANGELOG.md) for release history; and [`ROADMAP.md`](./ROADMAP.md) for what's verified-working vs. still limited, plus the release checklist.
 
 ## Features
 
@@ -110,6 +110,17 @@ So the app ships:
 - A clean `GarminProvider` interface (`src/garmin/GarminProvider.ts`) for connect/upload/list/delete, so a real OAuth 2.0 integration can be dropped in later without touching the UI — but the only implementation shipped (`UnavailableGarminProvider`) honestly reports "not available" for every method rather than faking success.
 
 No Garmin credentials or configuration are needed or possible in this build — there's nothing to put in `.env`.
+
+## Known issues
+
+- Avalanche danger ratings only cover US/Alaska forecast centers — no coverage elsewhere.
+- The weather map overlay shows current conditions only (OpenWeatherMap's free tier has no forecast/historical time parameter); use the Open-Meteo forecast panel for an actual multi-hour forecast.
+- KMZ (zipped KML) import isn't supported — only plain `.kml`.
+- The smart route planner can't target viewpoints, peaks, surface type, or an exact elevation-gain figure — those preferences are shown disabled/best-effort rather than faked, since no wired data source actually supports them.
+- The production JS bundle is a single ~1.3 MB file (not yet code-split) — first load is a bit heavier than it needs to be.
+- Direct Garmin account upload doesn't exist — see [Garmin integration status](#garmin-integration-status) above.
+
+See [`ROADMAP.md`](./ROADMAP.md) for the fuller list plus what's likely to come next.
 
 ## Recommended IDE Setup
 

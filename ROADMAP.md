@@ -11,8 +11,8 @@ Where Contour (Windows desktop) stands and what's likely next. See [`architectur
 - Smart route planning (loop/out-and-back/point-to-point, verified live against ORS) with honest limits on what it can and can't optimise for.
 - Route analysis (steep sections, difficulty estimate, elevation range, waypoint summary — verified live with real elevation data).
 - Measuring tools, coordinate readout/copy/format, waypoint reordering, grid overlay, GeoJSON/KML import, GeoJSON export.
-
 - Garmin: validated GPX course export + local transfer instructions (real, working). Direct account upload is a designed-but-unimplemented interface (`GarminProvider`) — Garmin's Courses API is business-only, application-gated, and has no sandbox (confirmed live against Garmin's developer site), so there is nothing to implement against yet.
+- Tile-fetch concurrency bounding, timeouts + rate-limit-aware messages on every network provider, mutual-exclusion between map click-tools, confirm-before-discard on Clear, and a corrupt-data fallback for offline-region metadata reads.
 
 **Known gaps, tracked here rather than silently dropped:**
 - No avalanche coverage outside the US/Alaska — `AvalancheProvider` is a clean interface, so a second regional service (e.g. a verified EAWS-aggregating source for Europe) can be added without touching the UI.
@@ -20,6 +20,32 @@ Where Contour (Windows desktop) stands and what's likely next. See [`architectur
 - The weather map overlay has no forecast/time-travel on the free OpenWeatherMap tier (current conditions only); the Open-Meteo panel is the real forecast source.
 - The smart route planner can't target viewpoints, peaks, or surface type — no wired data source supports that, and the UI says so rather than faking it.
 - The production JS bundle is a single ~1.29 MB chunk (build warns about this) — not yet code-split.
+
+## Release checklist
+
+### V1 (core mapping + routing) — complete
+- [x] Globe navigation, 4 map modes, 3D terrain/contours
+- [x] Search, place info
+- [x] Hiking/ski layers
+- [x] Route planning (manual + ORS modes), elevation profile, GPX export/import
+- [x] Liquid Glass UI, local tile cache
+- [x] Offline maps, GPS location
+
+### V2 (this round) — complete, with the limitations noted above
+- [x] Weather map + forecast panel
+- [x] Avalanche danger ratings (US/Alaska)
+- [x] Smart route planning
+- [x] Extended route analysis
+- [x] Planning tools (measure, coordinates, reorder, grid, GeoJSON/KML)
+- [x] Garmin export foundation (local GPX course export; no direct upload — see Known limitations)
+- [x] Cross-feature integration pass, tile-loading audit, route-editor polish, network resilience (this document + CHANGELOG)
+- [ ] Documentation/release-readiness pass — in progress as this checklist is being written
+- [ ] Final quality pass (full build, smoke test, secret scan, diff review) — not yet run as of this checklist
+
+### Not in V1 or V2 (deliberately out of scope)
+- Live route following / turn-by-turn navigation
+- Direct Garmin account upload (blocked on Garmin's own business-approval process)
+- Android build (Windows desktop only, per project scope)
 
 ## Candidate next phases
 
