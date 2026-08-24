@@ -306,6 +306,11 @@ function App() {
   const handleStartRoute = () => {
     hikingTrailsWasOffRef.current = !hikingTrailsEnabled;
     if (!hikingTrailsEnabled) setHikingTrailsEnabled(true);
+    // Route-editing clicks add waypoints — clear any other click-interaction
+    // mode first so a click can't be interpreted two ways at once.
+    handleMeasureModeChange("off");
+    setRegionDrawActive(false);
+    setPickPointActive(false);
     routeDispatch({ type: "START_EDITING" });
   };
   const handleFinishRoute = () => {
@@ -469,16 +474,54 @@ function App() {
     setMeasureTotalMeters(totalMeters);
     setMeasureAreaSqMeters(areaSqMeters);
   };
+  // Only one map-click interaction mode makes sense at a time (drawing an
+  // offline region, measuring, and picking a route-planner end point all
+  // reinterpret plain map clicks) — activating one clears the others so a
+  // stray click can't be interpreted two different ways at once.
   const handleMeasureModeChange = (mode: MeasureMode) => {
     setMeasureMode(mode);
     if (mode === "off") {
       setMeasurePointCount(0);
       setMeasureTotalMeters(0);
       setMeasureAreaSqMeters(null);
+    } else {
+      setRegionDrawActive(false);
+      setPickPointActive(false);
     }
+  };
+  const handleToggleRegionDraw = () => {
+    setRegionDrawActive((a) => {
+      const next = !a;
+      if (next) {
+        handleMeasureModeChange("off");
+        setPickPointActive(false);
+      }
+      return next;
+    });
+  };
+  const handleTogglePickPoint = () => {
+    setPickPointActive((a) => {
+      const next = !a;
+      if (next) {
+        handleMeasureModeChange("off");
+        setRegionDrawActive(false);
+      }
+      return next;
+    });
   };
 
   const handleClearRoute = () => {
+    const hasUnsavedWork = routeState.waypoints.length > 0 || importedRoute !== null;
+    // Waypoint edits go through routeReducer's undo history and can be
+    // brought back with Undo after clearing; an imported/generated route
+    // (importedRoute) has no such history, so clearing it is final —
+    // the message below only promises what's actually true for each case.
+    if (hasUnsavedWork) {
+      const message = importedRoute
+        ? "Clear the current route? This route was imported/generated and can't be brought back with Undo."
+        : "Clear the current route? You can bring it back with Undo.";
+      if (!window.confirm(message)) return;
+    }
     routeDispatch({ type: "CLEAR" });
     setRouteResult(null);
     setRouteError(null);
@@ -680,7 +723,7 @@ function App() {
             onRedo={() => routeDispatch({ type: "REDO" })}
             onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
           />
-          <RegionDrawTool active={regionDrawActive} onToggle={() => setRegionDrawActive((a) => !a)} />
+          <RegionDrawTool active={regionDrawActive} onToggle={handleToggleRegionDraw} />
           {drawnBbox && (
             <OfflineDownloadPanel bbox={drawnBbox} hasEsri={hasEsri} onClose={() => setDrawnBbox(null)} />
           )}
@@ -694,7 +737,7 @@ function App() {
               onUseMapCenterStart={handleUseMapCenterStart}
               pickedEndPoint={plannerEndPoint}
               pickPointActive={pickPointActive}
-              onTogglePickPoint={() => setPickPointActive((a) => !a)}
+              onTogglePickPoint={handleTogglePickPoint}
               onClearEndPoint={() => setPlannerEndPoint(null)}
               planRoundTrip={handlePlanRoundTrip}
               planRoute={handlePlanRoute}
