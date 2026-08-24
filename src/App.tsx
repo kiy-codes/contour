@@ -323,6 +323,29 @@ function App() {
     activeResult?.durationSeconds ??
     (activeResult && ascentMeters !== undefined ? estimateHikingDurationSeconds(activeResult.distanceMeters, ascentMeters) : undefined);
 
+  // Garmin export needs real elevation on the track points themselves, not
+  // just the derived ascent/descent totals above. Manual-mode (and some
+  // imported) routes carry no per-point elevation on activeResult.points —
+  // Contour still has real DEM-sampled elevation for them via profileStats,
+  // just resampled onto a different point count/spacing, so it can't be
+  // zipped 1:1 onto activeResult.points. Swap in the profile's own points
+  // (already lng/lat/elevation) as the export geometry in that case, rather
+  // than exporting a flat course while the on-screen stats show real
+  // elevation right next to it.
+  const hasDenseElevation = activeResult !== null && activeResult.points.length > 2 && activeResult.points.every((p) => p.elevation !== undefined);
+  const garminExportResult: RouteResult | null = activeResult
+    ? {
+        ...activeResult,
+        points: hasDenseElevation
+          ? activeResult.points
+          : profileStats.hasElevationData
+            ? profileStats.profile.map((p) => ({ lng: p.lng, lat: p.lat, elevation: p.elevation }))
+            : activeResult.points,
+        ascentMeters,
+        descentMeters,
+      }
+    : null;
+
   const handleImportGpx = async () => {
     setGpxNotice(null);
     let file: { path: string; contents: string } | null;
@@ -682,9 +705,9 @@ function App() {
               }}
             />
           )}
-          {garminExportOpen && activeResult && (
+          {garminExportOpen && garminExportResult && (
             <GarminExportPanel
-              result={activeResult}
+              result={garminExportResult}
               waypoints={routeState.waypoints}
               defaultName={importedRoute ? importedRouteName : "Route"}
               onClose={() => setGarminExportOpen(false)}
