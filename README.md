@@ -36,11 +36,37 @@ npm install
 cp .env.example .env
 ```
 
-Then open `.env` and fill in your own free API keys — see the comments in `.env.example` for signup links (no credit card required for either):
-- `VITE_ORS_API_KEY` (OpenRouteService) — powers hiking/walking/cycling/driving route calculation. Without it, only manual (straight-line) routing works.
-- `VITE_ESRI_API_KEY` (Esri ArcGIS Location Platform) — powers Satellite map mode. Without it, that mode stays disabled.
+Then open `.env` and fill in your own free API keys, following the steps below (no credit card required for either). `.env` is git-ignored — your keys never get committed.
 
 Everything else (globe navigation, terrain, hiking/ski trail layers, search, GPS location, offline maps, GPX import/export) works with no keys at all.
+
+### Getting `VITE_ORS_API_KEY` (OpenRouteService)
+
+Powers hiking/walking/cycling/driving route calculation. Without it, only manual (straight-line) routing works. Free tier: ~2,000 requests/day, 40 requests/60s.
+
+1. Go to [openrouteservice.org/dev/#/signup](https://openrouteservice.org/dev/#/signup) and create a free account (email + password, no card).
+2. Verify your email if prompted, then log in.
+3. Go to your dashboard at [account.heigit.org](https://account.heigit.org).
+4. Under **Request a token**, choose the **Standard** (free) plan and give the token a name (e.g. "Contour").
+5. Copy the generated API key.
+6. Paste it into `.env`:
+   ```
+   VITE_ORS_API_KEY=your_key_here
+   ```
+
+### Getting `VITE_ESRI_API_KEY` (Esri ArcGIS Location Platform)
+
+Powers the Satellite and 3D Satellite map modes (Esri World Imagery). Without it, those modes stay disabled. Free tier: 2,000,000 basemap tile requests/month.
+
+1. Go to [location.arcgis.com/sign-up](https://location.arcgis.com/sign-up/) and create a free ArcGIS Location Platform account.
+2. Verify your email and log in to the [ArcGIS Location Platform dashboard](https://location.arcgis.com/).
+3. Open the **API Keys** section and create a new API key (default settings are fine — it just needs access to basemap/tile services).
+4. Copy the generated key (it will look like a long string starting with `AAPT...`).
+5. Paste it into `.env`:
+   ```
+   VITE_ESRI_API_KEY=your_key_here
+   ```
+6. If signup ever prompts you for payment details before you've gone anywhere near the free tier limits, stop and don't enter them — the free tier itself shouldn't require a card.
 
 **Run in dev mode** (hot reload):
 
