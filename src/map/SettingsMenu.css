@@ -37,9 +37,18 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 220px;
+  width: 240px;
   z-index: 30;
   min-width: 0;
+  /* No overflow/max-height here — `overflow` other than `visible` clips
+     this element's own box-shadow bleed even when content isn't actually
+     tall enough to scroll (the "shadows are wrong" bug), not just content
+     past a genuinely-exceeded bound. The panel's real content height fits
+     comfortably in a normal desktop window, so there's nothing to gain
+     from it and a real visual cost if added. If this panel's content ever
+     grows enough to need scrolling, that needs a wrapper div (outer:
+     overflow + no shadow, inner: shadow + no overflow) rather than putting
+     both on one element. */
   animation: pop-in 0.3s var(--ease-glass);
 }
 
@@ -57,35 +66,43 @@
 
 .settings-menu__theme-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--ui-fill);
 }
 
 .settings-menu__theme-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 7px 10px;
-  font-size: 0.85em;
-  font-family: inherit;
-  text-align: left;
-  color: var(--text-primary);
-  background: var(--ui-fill);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
   cursor: pointer;
-  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+  transition: background-color 0.15s var(--ease-glass), color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
 }
 
 .settings-menu__theme-btn:hover {
   background: var(--ui-fill-hover);
-  transform: translateX(2px);
+  color: var(--text-primary);
 }
 
 .settings-menu__theme-btn:active {
-  transform: scale(0.98);
+  transform: scale(0.94);
 }
 
 .settings-menu__theme-btn--active {
   background: rgba(70, 130, 240, 0.75);
   border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+}
+
+.settings-menu__theme-btn--active:hover {
+  background: rgba(70, 130, 240, 0.85);
   color: #fff;
 }
 

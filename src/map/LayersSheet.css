@@ -1,0 +1,138 @@
+.layers-fab {
+  position: absolute;
+  bottom: 84px;
+  right: 16px;
+  z-index: 20;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.layers-fab:hover {
+  background: var(--ui-fill-hover);
+}
+
+.layers-fab:active {
+  transform: scale(0.93);
+}
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.35);
+  animation: sheet-backdrop-in 0.22s var(--ease-glass);
+}
+
+.sheet-backdrop--closing {
+  animation: sheet-backdrop-out 0.2s var(--ease-glass) forwards;
+}
+
+@keyframes sheet-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-backdrop-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.layers-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 26;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px 20px 0 0;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-bottom: none;
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  animation: sheet-slide-up 0.24s var(--ease-glass);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.layers-sheet--closing {
+  animation: sheet-slide-down 0.2s var(--ease-glass) forwards;
+}
+
+@keyframes sheet-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-slide-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.layers-sheet__handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ui-fill-hover);
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+
+.layers-sheet__scroll {
+  overflow-y: auto;
+  padding: 8px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The reused desktop panels (.mode-switcher, .terrain-controls) each carry
+   their own glass card styling, which would nest awkwardly (box-in-a-box)
+   inside the sheet's already-glass background — flatten them here so only
+   the sheet itself reads as the glass surface. */
+.layers-sheet__scroll > * {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: 10px 0 !important;
+  animation: none !important;
+}
+
+.layers-sheet__scroll > *:not(:last-child) {
+  border-bottom: 1px solid var(--glass-border) !important;
+}

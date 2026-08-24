@@ -1,0 +1,48 @@
+.location-control__trigger {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass), color 0.15s var(--ease-glass);
+}
+
+.location-control__trigger:hover {
+  background: var(--ui-fill-hover);
+}
+
+.location-control__trigger:active {
+  transform: scale(0.94);
+}
+
+.location-control__trigger--active {
+  background: rgba(70, 130, 240, 0.75);
+  border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+}
+
+.location-control__trigger--active:hover {
+  background: rgba(70, 130, 240, 0.9);
+}
+
+.location-control__trigger--error {
+  color: #e2662d;
+}
+
+.location-control__spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: var(--text-primary);
+  animation: search-spin 0.7s linear infinite;
+}

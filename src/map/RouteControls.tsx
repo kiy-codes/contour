@@ -21,6 +21,15 @@ export interface RouteControlsProps {
   onModeChange: (mode: RoutingMode) => void;
   onImportGpx: () => void;
   onExportGpx: () => void;
+  /** Swaps the floating top-right panel for a FAB (collapsed) / full-width
+   * bottom bar (editing) — the floating panel is what made route editing
+   * unusable on a phone screen, covering most of the map. */
+  isMobile?: boolean;
+  /** Desktop-only GPS integration (src/geo/useGeolocation.ts) — when a fix
+   * is available, the initial "Start route" screen also offers starting
+   * from the current position. Omitted entirely on mobile. */
+  hasLocationFix?: boolean;
+  onStartFromLocation?: () => void;
 }
 
 const MODE_OPTIONS: { mode: RoutingMode; label: string; needsOrs: boolean }[] = [
@@ -47,6 +56,9 @@ export default function RouteControls({
   onModeChange,
   onImportGpx,
   onExportGpx,
+  isMobile = false,
+  hasLocationFix = false,
+  onStartFromLocation,
 }: RouteControlsProps) {
   // The full editing panel below is its own branch, not a toggled child —
   // so its close (Finish+Clear collapsing back down) needs the same
@@ -56,11 +68,25 @@ export default function RouteControls({
   const { rendered: fullPanelRendered, closing: fullPanelClosing } = useExitTransition(showFullPanel, CLOSE_ANIMATION_MS);
 
   if (!fullPanelRendered && !hasImportedRoute) {
+    if (isMobile) {
+      return (
+        <button className="route-fab" onClick={onStart} title="Start route" aria-label="Start route">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+          </svg>
+        </button>
+      );
+    }
     return (
       <div className="terrain-controls">
         <button className="route-controls__start" onClick={onStart}>
           Start route
         </button>
+        {hasLocationFix && onStartFromLocation && (
+          <button className="glass-btn" onClick={onStartFromLocation}>
+            Start from my location
+          </button>
+        )}
         <div className="route-controls__row">
           <button onClick={onImportGpx}>Import GPX</button>
         </div>
@@ -70,7 +96,7 @@ export default function RouteControls({
 
   if (!fullPanelRendered && hasImportedRoute) {
     return (
-      <div className="terrain-controls">
+      <div className={isMobile ? "route-controls-bar" : "terrain-controls"}>
         <div className="route-controls__row">
           <button onClick={onExportGpx}>Export GPX</button>
           <button onClick={onImportGpx}>Import GPX</button>
@@ -83,8 +109,16 @@ export default function RouteControls({
     );
   }
 
+  const panelClass = isMobile
+    ? fullPanelClosing
+      ? "route-controls-bar route-controls-bar--closing"
+      : "route-controls-bar"
+    : fullPanelClosing
+      ? "terrain-controls route-controls route-controls--closing"
+      : "terrain-controls route-controls";
+
   return (
-    <div className={fullPanelClosing ? "terrain-controls route-controls route-controls--closing" : "terrain-controls route-controls"}>
+    <div className={panelClass}>
       <div className="route-controls__modes">
         {MODE_OPTIONS.map((opt) => {
           const disabled = opt.needsOrs && !hasOrs;

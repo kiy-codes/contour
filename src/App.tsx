@@ -1,17 +1,21 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import MapCanvas, { type MapCanvasHandle } from "./map/MapCanvas";
-import MapModeSwitcher from "./map/MapModeSwitcher";
-import TerrainControls from "./map/TerrainControls";
-import OutdoorControls from "./map/OutdoorControls";
-import SkiControls from "./map/SkiControls";
 import RouteControls from "./map/RouteControls";
 import RouteStatsPanel from "./map/RouteStatsPanel";
-import CacheControls from "./map/CacheControls";
 import SearchBar from "./map/SearchBar";
 import PlaceInfoPanel from "./map/PlaceInfoPanel";
 import SkiInfoPanel, { type SkiInfoTarget } from "./map/SkiInfoPanel";
 import SettingsMenu from "./map/SettingsMenu";
+import LayersSheet from "./map/LayersSheet";
+import LayersMenu from "./map/LayersMenu";
+import RegionDrawTool from "./map/RegionDrawTool";
+import OfflineDownloadPanel from "./map/OfflineDownloadPanel";
+import OfflineRegionsManager from "./map/OfflineRegionsManager";
+import type { Bbox } from "./offline/regionTiles";
+import LocationControl from "./map/LocationControl";
+import { useGeolocation } from "./geo/useGeolocation";
 import GlassDistortionFilter from "./theme/GlassDistortionFilter";
+import { useIsMobile } from "./theme/useIsMobile";
 import { CompositeGeocodingProvider, type SearchResult } from "./providers/GeocodingProvider";
 import type { SkiLift, SkiRun } from "./providers/SkiDataProvider";
 import type { RouteResult } from "./providers/RoutingProvider";
@@ -53,7 +57,9 @@ const EMPTY_PROFILE_STATS: ProfileStats = {
 };
 
 function App() {
+  const isMobile = useIsMobile();
   const mapHandle = useRef<MapCanvasHandle>(null);
+  const geolocation = useGeolocation();
   const [mode, setMode] = useState<MapStyleMode>("standard");
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [exaggeration, setExaggeration] = useState(1.5);
@@ -77,10 +83,21 @@ function App() {
   const [importedRoute, setImportedRoute] = useState<RouteResult | null>(null);
   const [importedRouteName, setImportedRouteName] = useState<string>("Route");
   const [gpxNotice, setGpxNotice] = useState<string | null>(null);
+  const [regionDrawActive, setRegionDrawActive] = useState(false);
+  const [drawnBbox, setDrawnBbox] = useState<Bbox | null>(null);
+  const [offlineManagerOpen, setOfflineManagerOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   // Whichever route is actually on screen right now — an imported track
   // takes precedence over an in-progress computed route.
   const activeResult = importedRoute ?? routeResult;
+
+  // On mobile, RouteControls' floating panel becomes a full-width bottom
+  // bar (see RouteControls.tsx) — showing the stats panel at the same time
+  // would fight it for the same screen real estate, so hide stats while
+  // any of that bar's variants are up; it reappears once collapsed back to
+  // the FAB (Finish/Clear/Start-new all lead there).
+  const mobileRouteBarShowing = isMobile && (routeState.isEditing || routeState.waypoints.length > 0 || importedRoute !== null);
 
   const handleElevationHover = (elevation: number | null, _point: LngLat) => {
     setHoverElevation(elevation);
@@ -154,6 +171,40 @@ function App() {
     const timer = setTimeout(() => setGpxNotice(null), 4000);
     return () => clearTimeout(timer);
   }, [gpxNotice]);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    mapHandle.current?.showUserLocationMarker(geolocation.position);
+  }, [geolocation.position]);
+
+  const handleRecenterOnLocation = () => {
+    if (geolocation.position) mapHandle.current?.flyTo(geolocation.position.point, { pitch: 0 });
+  };
+
+  const handleStartRouteHere = () => {
+    if (!geolocation.position) return;
+    handleStartRoute();
+    routeDispatch({ type: "ADD_WAYPOINT", point: geolocation.position.point });
+  };
+
+  const handleRegionDrawn = (bbox: Bbox) => {
+    setRegionDrawActive(false);
+    setDrawnBbox(bbox);
+  };
+
+  const handleFlyToOfflineRegion = (bbox: Bbox) => {
+    mapHandle.current?.flyToResult({ lng: (bbox[0] + bbox[2]) / 2, lat: (bbox[1] + bbox[3]) / 2 }, bbox);
+  };
 
   // Hiking trails are the whole point of route editing, so switch them on
   // automatically while editing — but only restore them to off on finish if
@@ -267,6 +318,8 @@ function App() {
         onSkiRunClick={handleSkiRunClick}
         onSkiLiftClick={handleSkiLiftClick}
         onRouteComputed={handleRouteComputed}
+        regionDrawEnabled={regionDrawActive}
+        onRegionDrawn={handleRegionDrawn}
       />
       <div className="glow-layer" aria-hidden="true">
         <div className="glow-blob glow-blob--1" />
@@ -279,63 +332,135 @@ function App() {
         <PlaceInfoPanel place={selectedPlace} elevation={placeElevation} onClose={() => setSelectedPlace(null)} />
       )}
       {skiTarget && <SkiInfoPanel target={skiTarget} onClose={() => setSkiTarget(null)} />}
-      <div className="right-controls">
-        <SettingsMenu />
-        <MapModeSwitcher mode={mode} onChange={setMode} hasEsri={hasEsri} />
-        <TerrainControls
-          terrainEnabled={terrainEnabled}
-          onTerrainEnabledChange={setTerrainEnabled}
-          exaggeration={exaggeration}
-          onExaggerationChange={setExaggeration}
-          contoursEnabled={contoursEnabled}
-          onContoursEnabledChange={setContoursEnabled}
-        />
-        <OutdoorControls
-          hikingTrailsEnabled={hikingTrailsEnabled}
-          onHikingTrailsEnabledChange={setHikingTrailsEnabled}
-          longDistanceTrailsEnabled={longDistanceTrailsEnabled}
-          onLongDistanceTrailsEnabledChange={setLongDistanceTrailsEnabled}
-          trailNamesEnabled={trailNamesEnabled}
-          onTrailNamesEnabledChange={setTrailNamesEnabled}
-        />
-        <SkiControls
-          runsEnabled={skiRunsEnabled}
-          onRunsEnabledChange={setSkiRunsEnabled}
-          difficultyColoursEnabled={skiDifficultyColoursEnabled}
-          onDifficultyColoursEnabledChange={setSkiDifficultyColoursEnabled}
-          liftsEnabled={skiLiftsEnabled}
-          onLiftsEnabledChange={setSkiLiftsEnabled}
-          runNamesEnabled={skiRunNamesEnabled}
-          onRunNamesEnabledChange={setSkiRunNamesEnabled}
-          liftNamesEnabled={skiLiftNamesEnabled}
-          onLiftNamesEnabledChange={setSkiLiftNamesEnabled}
-        />
-        <RouteControls
-          isEditing={routeState.isEditing}
-          hasWaypoints={routeState.waypoints.length > 0}
-          hasImportedRoute={importedRoute !== null}
-          mode={routeState.mode}
-          hasOrs={hasOrs}
-          canUndo={routeState.past.length > 0}
-          canRedo={routeState.future.length > 0}
-          onStart={handleStartRoute}
-          onFinish={handleFinishRoute}
-          onClear={handleClearRoute}
-          onImportGpx={handleImportGpx}
-          onExportGpx={handleExportGpx}
-          onUndo={() => routeDispatch({ type: "UNDO" })}
-          onRedo={() => routeDispatch({ type: "REDO" })}
-          onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
-        />
-        <CacheControls />
-      </div>
+      {isMobile ? (
+        <>
+          <div className="mobile-settings-slot">
+            <SettingsMenu />
+          </div>
+          <LayersSheet
+            mode={mode}
+            onChange={setMode}
+            hasEsri={hasEsri}
+            terrainEnabled={terrainEnabled}
+            onTerrainEnabledChange={setTerrainEnabled}
+            exaggeration={exaggeration}
+            onExaggerationChange={setExaggeration}
+            contoursEnabled={contoursEnabled}
+            onContoursEnabledChange={setContoursEnabled}
+            hikingTrailsEnabled={hikingTrailsEnabled}
+            onHikingTrailsEnabledChange={setHikingTrailsEnabled}
+            longDistanceTrailsEnabled={longDistanceTrailsEnabled}
+            onLongDistanceTrailsEnabledChange={setLongDistanceTrailsEnabled}
+            trailNamesEnabled={trailNamesEnabled}
+            onTrailNamesEnabledChange={setTrailNamesEnabled}
+            runsEnabled={skiRunsEnabled}
+            onRunsEnabledChange={setSkiRunsEnabled}
+            difficultyColoursEnabled={skiDifficultyColoursEnabled}
+            onDifficultyColoursEnabledChange={setSkiDifficultyColoursEnabled}
+            liftsEnabled={skiLiftsEnabled}
+            onLiftsEnabledChange={setSkiLiftsEnabled}
+            runNamesEnabled={skiRunNamesEnabled}
+            onRunNamesEnabledChange={setSkiRunNamesEnabled}
+            liftNamesEnabled={skiLiftNamesEnabled}
+            onLiftNamesEnabledChange={setSkiLiftNamesEnabled}
+          />
+          <RouteControls
+            isMobile
+            isEditing={routeState.isEditing}
+            hasWaypoints={routeState.waypoints.length > 0}
+            hasImportedRoute={importedRoute !== null}
+            mode={routeState.mode}
+            hasOrs={hasOrs}
+            canUndo={routeState.past.length > 0}
+            canRedo={routeState.future.length > 0}
+            onStart={handleStartRoute}
+            onFinish={handleFinishRoute}
+            onClear={handleClearRoute}
+            onImportGpx={handleImportGpx}
+            onExportGpx={handleExportGpx}
+            onUndo={() => routeDispatch({ type: "UNDO" })}
+            onRedo={() => routeDispatch({ type: "REDO" })}
+            onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
+          />
+        </>
+      ) : (
+        <div className="right-controls">
+          <SettingsMenu
+            onOpenOfflineManager={() => setOfflineManagerOpen(true)}
+            locationStatus={geolocation.status}
+            onStopSharingLocation={geolocation.disable}
+          />
+          <div className="right-controls__row">
+            <LocationControl
+              status={geolocation.status}
+              errorMessage={geolocation.errorMessage}
+              onEnable={geolocation.enable}
+              onRecenter={handleRecenterOnLocation}
+            />
+            <LayersMenu
+              mode={mode}
+              onChange={setMode}
+              hasEsri={hasEsri}
+              terrainEnabled={terrainEnabled}
+              onTerrainEnabledChange={setTerrainEnabled}
+              exaggeration={exaggeration}
+              onExaggerationChange={setExaggeration}
+              contoursEnabled={contoursEnabled}
+              onContoursEnabledChange={setContoursEnabled}
+              hikingTrailsEnabled={hikingTrailsEnabled}
+              onHikingTrailsEnabledChange={setHikingTrailsEnabled}
+              longDistanceTrailsEnabled={longDistanceTrailsEnabled}
+              onLongDistanceTrailsEnabledChange={setLongDistanceTrailsEnabled}
+              trailNamesEnabled={trailNamesEnabled}
+              onTrailNamesEnabledChange={setTrailNamesEnabled}
+              runsEnabled={skiRunsEnabled}
+              onRunsEnabledChange={setSkiRunsEnabled}
+              difficultyColoursEnabled={skiDifficultyColoursEnabled}
+              onDifficultyColoursEnabledChange={setSkiDifficultyColoursEnabled}
+              liftsEnabled={skiLiftsEnabled}
+              onLiftsEnabledChange={setSkiLiftsEnabled}
+              runNamesEnabled={skiRunNamesEnabled}
+              onRunNamesEnabledChange={setSkiRunNamesEnabled}
+              liftNamesEnabled={skiLiftNamesEnabled}
+              onLiftNamesEnabledChange={setSkiLiftNamesEnabled}
+            />
+          </div>
+          <RouteControls
+            isEditing={routeState.isEditing}
+            hasWaypoints={routeState.waypoints.length > 0}
+            hasImportedRoute={importedRoute !== null}
+            mode={routeState.mode}
+            hasOrs={hasOrs}
+            canUndo={routeState.past.length > 0}
+            canRedo={routeState.future.length > 0}
+            hasLocationFix={geolocation.position !== null}
+            onStartFromLocation={handleStartRouteHere}
+            onStart={handleStartRoute}
+            onFinish={handleFinishRoute}
+            onClear={handleClearRoute}
+            onImportGpx={handleImportGpx}
+            onExportGpx={handleExportGpx}
+            onUndo={() => routeDispatch({ type: "UNDO" })}
+            onRedo={() => routeDispatch({ type: "REDO" })}
+            onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
+          />
+          <RegionDrawTool active={regionDrawActive} onToggle={() => setRegionDrawActive((a) => !a)} />
+          {drawnBbox && (
+            <OfflineDownloadPanel bbox={drawnBbox} hasEsri={hasEsri} onClose={() => setDrawnBbox(null)} />
+          )}
+        </div>
+      )}
+      {!isMobile && offlineManagerOpen && (
+        <OfflineRegionsManager hasEsri={hasEsri} onClose={() => setOfflineManagerOpen(false)} onFlyTo={handleFlyToOfflineRegion} />
+      )}
       {terrainEnabled && (
         <div className="elevation-hud">{hoverElevation !== null ? `Elevation: ${Math.round(hoverElevation)} m` : "Elevation: —"}</div>
       )}
+      {!isMobile && !isOnline && <div className="offline-badge">Offline</div>}
       <div className="version-badge">v1</div>
       {gpxNotice && <div className="gpx-notice">{gpxNotice}</div>}
       <RouteStatsPanel
-        result={activeResult}
+        result={mobileRouteBarShowing ? null : activeResult}
         error={importedRoute ? null : routeError}
         waypointCount={routeState.waypoints.length}
         profile={profileStats.profile}

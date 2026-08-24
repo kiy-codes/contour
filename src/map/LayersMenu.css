@@ -1,0 +1,58 @@
+.layers-menu {
+  position: relative;
+}
+
+.layers-menu__trigger {
+  min-width: 84px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.85em;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.layers-menu__trigger:hover {
+  background: var(--ui-fill-hover);
+}
+
+.layers-menu__trigger:active {
+  transform: scale(0.96);
+}
+
+.layers-menu__trigger--open {
+  background: rgba(70, 130, 240, 0.75);
+  border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+}
+
+.layers-menu__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 230px;
+  z-index: 30;
+  min-width: 0;
+  /* Deliberately no overflow/max-height — see the matching note in
+     SettingsMenu.css. `overflow` other than `visible` clips this panel's
+     own box-shadow even when nothing actually needs to scroll. */
+  animation: pop-in 0.3s var(--ease-glass);
+}
+
+.layers-menu__panel--closing {
+  animation: pop-out 0.2s var(--ease-glass) forwards;
+  pointer-events: none;
+}

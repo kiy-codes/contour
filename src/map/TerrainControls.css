@@ -44,3 +44,51 @@
   text-align: right;
   opacity: 0.85;
 }
+
+/* Shared theme-aware button look for anywhere a plain <button> would
+ * otherwise fall back to the browser's bare default rendering (a "grey
+ * box" that ignores the glass design entirely, dark-mode tint from
+ * color-scheme aside). Same recipe already proven in
+ * .route-controls__row button / .cache-controls__clear — pulled out here
+ * so every new panel can opt in with one className instead of
+ * re-implementing it. */
+.glass-btn {
+  flex: 1;
+  border-radius: 8px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  font-size: 0.85em;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.glass-btn:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+  transform: translateY(-1px);
+}
+
+.glass-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.glass-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Filled/primary variant — for the one "main" action in a row (Start
+ * download, Start route, etc.), same blue-accent look already used by
+ * .route-controls__start and active-state toggles throughout the app. */
+.glass-btn--primary {
+  border-color: rgba(120, 170, 255, 0.6);
+  background: rgba(70, 130, 240, 0.75);
+  color: #fff;
+}
+
+.glass-btn--primary:hover:not(:disabled) {
+  background: rgba(70, 130, 240, 0.9);
+}

@@ -256,6 +256,21 @@ body,
   }
 }
 
+/* Mobile: Settings has no parent flex column to place it anymore (that
+   column doesn't render at all on mobile — see LayersSheet/RouteControls'
+   FAB+sheet layout instead), so it needs its own fixed position. */
+.mobile-settings-slot {
+  position: absolute;
+  /* MapLibre's own zoom/compass control sits at top-right too, pushed down
+     to clear the search bar (see the mobile media query below) — this has
+     to clear the full height of that 3-button stack too, or the two just
+     overlap and one becomes unreachable. Caught this via an actual
+     emulator screenshot, not assumed. */
+  top: 194px;
+  right: 16px;
+  z-index: 15;
+}
+
 .right-controls {
   position: absolute;
   top: 100px;
@@ -266,11 +281,25 @@ body,
   align-items: flex-end;
   gap: 10px;
   /* No overflow/max-height here on purpose — clipping this container also
-     clips every child panel's box-shadow bleed, which reads as the shadow
-     being "cut off" at the container's edge. Desktop viewports have room
-     for the full stack, so leave it unclipped; the scroll fallback below
-     is mobile-only, where the shorter viewport actually needs it and a
-     bit of shadow clipping is the lesser problem. */
+     clips every child panel's box-shadow bleed (reads as the shadow being
+     cut off) *and*, worse, clips the Settings/Layers dropdown popouts:
+     they're position:absolute children that intentionally render outside
+     this container's own box, which an overflow:auto ancestor clips
+     regardless of the absolute positioning (tried this once — broke both
+     menus). Now that Settings/Layers/Terrain/Outdoor/Ski live behind
+     LayersMenu's single collapsed trigger instead of always being
+     expanded, the always-visible stack is short enough that desktop
+     viewports have room for it without scrolling. */
+}
+
+/* Houses the location trigger + Layers trigger side by side (location on
+   the left) instead of each stacking as its own row — just a plain flex
+   row, no positioning of its own, so LayersMenu's dropdown (position:
+   absolute relative to itself) still pops out correctly. */
+.right-controls__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 @media (max-width: 640px) {
@@ -295,9 +324,30 @@ body,
   }
 
   .search-bar {
-    top: 10px;
+    /* env(safe-area-inset-top) covers the camera cutout once the Android
+       status bar is hidden (see MainActivity.kt) — without it the bar
+       would sit under the cutout instead of clearing it. */
+    top: max(12px, env(safe-area-inset-top, 0px));
     left: 8px;
     width: calc(100vw - 16px);
+  }
+
+  /* MapLibre's stock NavigationControl (zoom +/- and compass) defaults to
+     top:10/right:10 — the same corner as the search bar, so its top "+"
+     button was rendering hidden underneath the search bar's opaque pill.
+     Push the whole group down to clear it. !important because MapLibre's
+     own stylesheet loads in an unpredictable order relative to this file. */
+  .maplibregl-ctrl-top-right {
+    top: 84px !important;
+  }
+
+  /* Same story for the attribution "i" control (default bottom:0/right:0):
+     it was landing directly under the Route FAB. Push it up above both
+     the Route FAB (bottom:16, 56px tall) and Layers FAB (bottom:84, 52px
+     tall) stacked in that same corner. */
+  .maplibregl-ctrl-bottom-right {
+    bottom: 148px !important;
+    right: 8px !important;
   }
 
   .place-info-panel {
@@ -344,6 +394,28 @@ body,
   text-shadow: var(--panel-text-shadow);
   font-size: 0.85em;
   font-variant-numeric: tabular-nums;
+}
+
+/* Shown whenever navigator.onLine is false — see App.tsx's online/offline
+   listener. Top-center, out of the way of the search bar and right-hand
+   control stack, but prominent enough that "why did that tile not load" has
+   an obvious answer. */
+.offline-badge {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(226, 102, 45, 0.85);
+  color: #fff;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: var(--glass-shadow);
+  pointer-events: none;
+  animation: pop-in 0.25s var(--ease-glass);
 }
 
 .version-badge {

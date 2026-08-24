@@ -6,6 +6,12 @@
   width: min(360px, calc(100vw - 32px));
 }
 
+@media (max-width: 640px) {
+  .search-bar {
+    top: max(12px, env(safe-area-inset-top, 0px));
+  }
+}
+
 .search-bar__input-row {
   display: flex;
   align-items: center;

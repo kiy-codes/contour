@@ -1,0 +1,6 @@
+.region-draw-tool__hint {
+  font-size: 0.78em;
+  color: var(--text-secondary);
+  max-width: 190px;
+  line-height: 1.35;
+}

@@ -1,6 +1,7 @@
 import type { LngLat } from "../providers/types";
 
 const EARTH_RADIUS_M = 6371000;
+const METERS_PER_DEG_LAT = (Math.PI / 180) * EARTH_RADIUS_M;
 
 function toRad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -41,6 +42,24 @@ export function boundsOf(points: LngLat[]): [number, number, number, number] | n
     if (p.lat > north) north = p.lat;
   }
   return [west, south, east, north];
+}
+
+/** A closed ring approximating a circle of `radiusMeters` around `center` —
+ * used to draw a GPS accuracy circle (src/map/MapCanvas.tsx). Flat-earth
+ * approximation (fine at accuracy-circle scale, tens to low-thousands of
+ * meters) rather than full great-circle math: longitude degrees shrink
+ * with cos(latitude), latitude degrees don't. */
+export function circleRing(center: LngLat, radiusMeters: number, steps = 48): [number, number][] {
+  const latRad = toRad(center.lat);
+  const metersPerDegLng = METERS_PER_DEG_LAT * Math.cos(latRad);
+  const ring: [number, number][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const theta = (i / steps) * 2 * Math.PI;
+    const dLat = (radiusMeters * Math.sin(theta)) / METERS_PER_DEG_LAT;
+    const dLng = metersPerDegLng > 0 ? (radiusMeters * Math.cos(theta)) / metersPerDegLng : 0;
+    ring.push([center.lng + dLng, center.lat + dLat]);
+  }
+  return ring;
 }
 
 /** Evenly-spaced points along a polyline (linear interpolation between

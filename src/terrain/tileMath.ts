@@ -58,3 +58,29 @@ export function tilesForBounds(bounds: [number, number, number, number], zoom: n
   });
   return all.slice(0, maxTiles);
 }
+
+/**
+ * Every tile covering the given bounds at zoom, nearest-to-center first —
+ * same coverage/ordering logic as tilesForBounds, but with no cap. For
+ * deliberate bulk region downloads (src/offline/), where the caller has
+ * already sized the request and wants every tile, not a viewport-sized
+ * sample of it.
+ */
+export function tilesForBoundsUnbounded(bounds: [number, number, number, number], zoom: number): TileCoord[] {
+  return tilesForBounds(bounds, zoom, Infinity);
+}
+
+/** Total tile count for a bbox at a given zoom — same math as
+ * tilesForBounds' coverage rectangle, without materializing the list.
+ * Used for cheap up-front size estimates across a whole zoom range. */
+export function tileCountForBounds(bounds: [number, number, number, number], zoom: number): number {
+  const [west, south, east, north] = bounds;
+  const [xMinF, yMinF] = lngLatToTileFrac(west, north, zoom);
+  const [xMaxF, yMaxF] = lngLatToTileFrac(east, south, zoom);
+  const n = 2 ** zoom;
+  const xMin = Math.max(0, Math.floor(xMinF));
+  const xMax = Math.min(n - 1, Math.ceil(xMaxF));
+  const yMin = Math.max(0, Math.floor(yMinF));
+  const yMax = Math.min(n - 1, Math.ceil(yMaxF));
+  return Math.max(0, xMax - xMin + 1) * Math.max(0, yMax - yMin + 1);
+}

@@ -16,12 +16,18 @@ export function registerTileCacheProtocol() {
 
   maplibregl.addProtocol(CACHE_SCHEME, async (params, abortController) => {
     const realUrl = params.url.slice(`${CACHE_SCHEME}://`.length);
-    const key = `tile:${realUrl}`;
+    const key = tileCacheKey(realUrl);
 
     let buffer: ArrayBuffer;
     const cached = await cacheGetBytes(key);
     if (cached) {
       buffer = cached.bytes.buffer as ArrayBuffer;
+    } else if (!navigator.onLine) {
+      // No point waiting on a connection that isn't there — fail fast
+      // instead of letting the browser hang on DNS/connect until its own
+      // timeout. MapLibre treats this exactly like any other failed tile
+      // request (renders the tile blank, keeps going).
+      throw new Error(`Offline and not cached: ${realUrl}`);
     } else {
       const response = await fetch(realUrl, { signal: abortController.signal });
       if (!response.ok) throw new Error(`Tile fetch failed: ${response.status} ${realUrl}`);
@@ -45,4 +51,13 @@ export function registerTileCacheProtocol() {
 /** Rewrites a real tile URL template to route through the cache protocol. */
 export function withCacheScheme(url: string): string {
   return `${CACHE_SCHEME}://${url}`;
+}
+
+/** The cache key a given real URL is stored/looked-up under — same
+ * convention the protocol handler above uses internally. Exported so
+ * anything that needs to pre-populate or check the cache for a specific
+ * URL (e.g. the offline region downloader) stays in sync with it rather
+ * than duplicating the "tile:" prefix as a magic string. */
+export function tileCacheKey(url: string): string {
+  return `tile:${url}`;
 }

@@ -14,7 +14,10 @@ function formatBytes(bytes: number): string {
  * "unavailable") if IndexedDB itself throws for some reason, rather than
  * throwing here too — should be rare, since IndexedDB works the same in
  * the browser preview as in the real app, unlike the old Tauri-IPC-backed
- * cache this replaced. */
+ * cache this replaced.
+ *
+ * Renders inline content only (no wrapping glass card) — it lives inside
+ * the Settings panel's "Storage" section, not as its own floating panel. */
 export default function CacheControls() {
   const [stats, setStats] = useState<CacheStats | null | "loading">("loading");
   const [busy, setBusy] = useState(false);
@@ -44,7 +47,7 @@ export default function CacheControls() {
   if (stats === "loading") return null;
 
   return (
-    <div className="terrain-controls">
+    <>
       {stats === null ? (
         <span style={{ opacity: 0.6 }}>Cache unavailable</span>
       ) : (
@@ -77,6 +80,6 @@ export default function CacheControls() {
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
