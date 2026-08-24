@@ -37,21 +37,21 @@ export default function MeasureTool({
     <div className="measure-tool">
       <div className="measure-tool__triggers">
         <button
-          className={mode === "distance" ? "weather-controls__pill weather-controls__pill--active" : "weather-controls__pill"}
+          className={mode === "distance" ? "measure-tool__trigger measure-tool__trigger--active" : "measure-tool__trigger"}
           onClick={() => onModeChange(mode === "distance" ? "off" : "distance")}
           title="Measure distance — click points on the map"
         >
           Measure distance
         </button>
         <button
-          className={mode === "area" ? "weather-controls__pill weather-controls__pill--active" : "weather-controls__pill"}
+          className={mode === "area" ? "measure-tool__trigger measure-tool__trigger--active" : "measure-tool__trigger"}
           onClick={() => onModeChange(mode === "area" ? "off" : "area")}
           title="Measure area — click points on the map"
         >
           Measure area
         </button>
         <button
-          className={gridEnabled ? "weather-controls__pill weather-controls__pill--active" : "weather-controls__pill"}
+          className={gridEnabled ? "measure-tool__trigger measure-tool__trigger--active" : "measure-tool__trigger"}
           onClick={() => onGridEnabledChange(!gridEnabled)}
           title="Toggle a lat/lng reference grid"
         >

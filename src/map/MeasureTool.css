@@ -10,6 +10,53 @@
   gap: 4px;
 }
 
+/* Same glass-pill recipe as .layers-menu__trigger/.location-control__trigger
+   — these buttons sit in the same top-level row as Layers/GPS, so they
+   need the same look, not the flatter in-panel .weather-controls__pill
+   chip style (that one's for compact selection lists inside an already-
+   glass panel, a different context). */
+.measure-tool__trigger {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  font-size: 0.8em;
+  font-family: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease-glass), transform 0.1s var(--ease-glass);
+}
+
+.measure-tool__trigger:hover {
+  background: var(--ui-fill-hover);
+}
+
+.measure-tool__trigger:active {
+  transform: scale(0.96);
+}
+
+.measure-tool__trigger--active {
+  background: rgba(70, 130, 240, 0.75);
+  border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+}
+
+/* Same specificity gotcha as elsewhere: :hover above outranks a single
+   --active class on its own. */
+.measure-tool__trigger--active:hover {
+  background: rgba(70, 130, 240, 0.9);
+}
+
 .measure-tool__panel {
   min-width: 180px;
 }

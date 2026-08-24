@@ -47,6 +47,13 @@
   border-color: rgba(120, 170, 255, 0.6);
 }
 
+/* :hover:not(:disabled) below is more specific than a single --active
+   class, so without this the plain hover fill would win while the cursor
+   sits over the already-active button. */
+.mode-switcher__btn--active:hover {
+  background: rgba(70, 130, 240, 0.9);
+}
+
 .mode-switcher__btn:disabled {
   color: var(--text-muted);
   cursor: not-allowed;

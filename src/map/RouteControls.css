@@ -70,6 +70,13 @@
   color: #fff;
 }
 
+/* :hover:not(:disabled) above outranks a single --active class, so
+   without this the plain hover fill would win while hovering the active
+   mode button. */
+.route-controls__mode--active:hover {
+  background: rgba(70, 130, 240, 0.9);
+}
+
 .route-controls__mode:disabled {
   color: var(--text-muted);
   cursor: not-allowed;

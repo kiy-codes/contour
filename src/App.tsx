@@ -83,7 +83,7 @@ function App() {
   const geolocation = useGeolocation();
   const [mode, setMode] = useState<MapStyleMode>("standard");
   const [terrainEnabled, setTerrainEnabled] = useState(false);
-  const [exaggeration, setExaggeration] = useState(1.5);
+  const [exaggeration, setExaggeration] = useState(1);
   const [contoursEnabled, setContoursEnabled] = useState(false);
   const [hikingTrailsEnabled, setHikingTrailsEnabled] = useState(false);
   const [longDistanceTrailsEnabled, setLongDistanceTrailsEnabled] = useState(false);

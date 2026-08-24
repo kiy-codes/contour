@@ -39,16 +39,33 @@
   color: #fff;
 }
 
+/* Without this, :hover's higher specificity (class+pseudo-class beats a
+   single class) silently wins over --open the moment the cursor is still
+   over the button right after clicking it open — which is the common
+   case — making the "selected" blue never actually show. */
+.layers-menu__trigger--open:hover {
+  background: rgba(70, 130, 240, 0.9);
+}
+
 .layers-menu__panel {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 230px;
+  width: 250px;
   z-index: 30;
   min-width: 0;
-  /* Deliberately no overflow/max-height — see the matching note in
-     SettingsMenu.css. `overflow` other than `visible` clips this panel's
-     own box-shadow even when nothing actually needs to scroll. */
+  /* Six sections (mode, terrain, outdoor, ski, weather, avalanche) can run
+     taller than a modest window — genuinely needs to scroll, unlike the
+     earlier defensive/unnecessary overflow additions elsewhere in this
+     app (see the matching note in SettingsMenu.css), so the shadow-
+     clipping tradeoff is worth it here. Only clips the bottom edge's
+     shadow, and only once content actually overflows. */
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+  /* Stops scrolling past the top/bottom of this panel's own content from
+     chaining to whatever's underneath (the map) — scrolling only ever
+     affects this panel while the cursor is over it. */
+  overscroll-behavior: contain;
   animation: pop-in 0.3s var(--ease-glass);
 }
 

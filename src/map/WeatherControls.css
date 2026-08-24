@@ -1,5 +1,9 @@
 .weather-controls {
-  min-width: 220px;
+  /* No min-width — this panel lives inside the fixed-width LayersMenu
+     panel; forcing a min-width wider than the space actually available
+     there just pushes content past the panel's edge instead of letting
+     it wrap/shrink to fit. */
+  min-width: 0;
 }
 
 .weather-controls__layers {
@@ -35,6 +39,15 @@
   background: rgba(70, 130, 240, 0.75);
   border-color: rgba(120, 170, 255, 0.6);
   color: #fff;
+}
+
+/* :hover:not(:disabled) above outranks a single --active class, so
+   without this the plain hover fill would win while hovering the active
+   pill — this class is reused for the route planner's shape/activity
+   pills and the Garmin export activity picker too, not just weather
+   layers, so the fix applies everywhere it's used. */
+.weather-controls__pill--active:hover {
+  background: rgba(70, 130, 240, 0.9);
 }
 
 .weather-controls__hint {

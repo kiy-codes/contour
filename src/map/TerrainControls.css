@@ -31,6 +31,11 @@
 
 .terrain-controls__row--slider input[type="range"] {
   flex: 1;
+  /* Flex items default to min-width: auto (their intrinsic content width),
+     which for a range input is wide enough on its own to push the label +
+     value either side of it past the panel's edge — min-width: 0 lets it
+     actually shrink to fit instead of forcing an overflow. */
+  min-width: 0;
   accent-color: #78aaff;
 }
 

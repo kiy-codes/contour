@@ -75,6 +75,74 @@
   --panel-text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
 }
 
+/* Liquid Glass's blurred, translucent backdrops need every bit of text and
+   every icon to carry its own contrast shadow, or they can wash out against
+   whatever busy map imagery is behind them — panels already set
+   text-shadow: var(--panel-text-shadow) individually, but setting it once
+   here too, at the very root, is the actual guarantee that nothing (now or
+   added later) is missed: text-shadow inherits, so every descendant gets it
+   for free unless something more specific overrides it, and one shared
+   declaration can't drift out of sync the way N per-file copies can.
+   Icons are a separate case — text-shadow has no effect on an <svg>, which
+   needs its own filter: drop-shadow() for the same visual effect. */
+:root[data-theme="glass"] .app-root {
+  text-shadow: var(--panel-text-shadow);
+}
+
+:root[data-theme="glass"] svg {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+/* Plain native checkboxes (every layer/feature toggle across Layers,
+   Settings, Weather, Avalanche, etc.) render with the OS's own bare
+   checkbox appearance regardless of theme — fine in Dark/Light, but a
+   flat white/grey OS square looks out of place against Liquid Glass's
+   translucent, blurred panels. Reskinned only for the glass theme, since
+   that's the one it's specifically wrong for; Dark/Light keep the native
+   control untouched. */
+:root[data-theme="glass"] input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  margin: 0;
+  border-radius: 4px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  box-shadow: var(--glass-highlight);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background-color 0.15s var(--ease-glass), border-color 0.15s var(--ease-glass);
+}
+
+:root[data-theme="glass"] input[type="checkbox"]:hover:not(:disabled) {
+  background: var(--ui-fill-hover);
+}
+
+:root[data-theme="glass"] input[type="checkbox"]:checked {
+  background: rgba(70, 130, 240, 0.85);
+  border-color: rgba(120, 170, 255, 0.6);
+}
+
+:root[data-theme="glass"] input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+:root[data-theme="glass"] input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @keyframes glass-in {
   from {
     opacity: 0;
