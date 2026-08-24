@@ -40,7 +40,7 @@ Where Contour (Windows desktop) stands and what's likely next. See [`architectur
 - [x] Garmin export foundation (local GPX course export; no direct upload — see Known limitations)
 - [x] Cross-feature integration pass, tile-loading audit, route-editor polish, network resilience (this document + CHANGELOG)
 - [x] Documentation/release-readiness pass
-- [x] Final quality pass — production build produced a working `.exe`/`.msi` (release compile clean, MSI installer built successfully); the NSIS `.exe`-installer bundling step failed with a Windows file-move error (os error 17) that traces to this session's sandboxed shell environment, not the app code — see CHANGELOG for detail. No automated test suite exists in this repo; verification throughout was `tsc` type-checking (always clean) plus extensive live manual testing.
+- [x] Final quality pass — production build produced a working `.exe`/`.msi` (release compile clean, MSI installer built successfully, reproduced 3x); the NSIS `.exe`-installer bundling step reproducibly fails with a Windows file-move error (os error 17), root-caused to Claude Code's own app-container sandboxing redirecting its NSIS download cache to isolated storage Windows treats as a different device — not an app or config defect, see CHANGELOG for the full diagnosis. No automated test suite exists in this repo; verification throughout was `tsc` type-checking (always clean) plus extensive live manual testing.
 
 ### Not in V1 or V2 (deliberately out of scope)
 - Live route following / turn-by-turn navigation
