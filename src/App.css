@@ -284,6 +284,16 @@ body,
   .glow-blob {
     opacity: 0.1;
     filter: blur(50px);
+    /* The 26-38s drift animations never stop, which means an endless,
+       expensive-to-composite blur(70px)-class repaint running at the
+       display's full refresh rate for as long as the app is open —
+       confirmed live on a real Android device via continuous ~8ms
+       (120Hz) WebView onDraw calls even with the map completely idle.
+       Desktop GPUs shrug this off; phone GPUs don't have that headroom,
+       and it's stealing frame budget from actual map rendering/input
+       responsiveness for a purely decorative background effect. Same
+       treatment already applied for prefers-reduced-motion below. */
+    animation: none;
   }
 
   .glow-blob--1,
@@ -335,6 +345,29 @@ body,
      overlap and one becomes unreachable. Caught this via an actual
      emulator screenshot, not assumed. */
   top: 194px;
+  right: 16px;
+  z-index: 15;
+}
+
+.mobile-location-slot {
+  /* Directly below the settings gear (34px button + gap) — the mobile
+     layout never had a "my location" trigger at all (GPS location was
+     originally Windows-desktop-only), confirmed missing via a real device
+     screenshot. */
+  position: absolute;
+  top: 240px;
+  right: 16px;
+  z-index: 15;
+}
+
+.mobile-region-draw-slot {
+  /* Same story as location — offline-region downloads were Windows-desktop
+     only, so this never had a mobile entry point either. Below the
+     location button in the same right-edge stack; RegionDrawTool's button
+     is text-width rather than icon-sized, so this widens to fit rather
+     than matching the fixed 34px icon slots above it. */
+  position: absolute;
+  top: 286px;
   right: 16px;
   z-index: 15;
 }

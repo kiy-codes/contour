@@ -77,7 +77,13 @@ export function registerTileCacheProtocol() {
         const response = await fetch(realUrl, { signal: abortController.signal });
         if (!response.ok) throw new Error(`Tile fetch failed: ${response.status} ${realUrl}`);
         buffer = await response.arrayBuffer();
-        void cachePutBytes(key, new Uint8Array(buffer), response.headers.get("content-type"));
+        // The buffer we return below is transferred (not copied) to MapLibre's
+        // tile worker, detaching it here — so the cache must get its own copy,
+        // made now while the original is still attached. Fire-and-forget: the
+        // copy is immune to the transfer, and awaiting the IndexedDB write
+        // would block this tile's render on a disk round-trip (measurably
+        // slower on-device, confirmed live).
+        void cachePutBytes(key, new Uint8Array(buffer.slice(0)), response.headers.get("content-type"));
       } finally {
         releaseFetchSlot();
       }

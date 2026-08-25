@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTheme, type Theme } from "../theme/ThemeContext";
+import { clampRenderSettings, type RenderSettings } from "../render/renderSettings";
 import type { GeolocationStatus } from "../geo/useGeolocation";
 import { useUnits } from "../units/UnitsContext";
 import { useCoordinateFormat } from "../geo/CoordinateFormatContext";
@@ -61,9 +62,68 @@ export interface SettingsMenuProps {
    * icon; turning it back off lives here instead). Omitted on mobile. */
   locationStatus?: GeolocationStatus;
   onStopSharingLocation?: () => void;
+  /** Mobile-only for now — makes tile resolution fall off faster toward the
+   * horizon (see MapCanvas's performanceMode handling) to cut down the tile
+   * churn behind the lag/obvious-reloading confirmed live in 3D on a real
+   * device. Omitted on desktop, which isn't affected the same way. */
+  performanceMode?: boolean;
+  onPerformanceModeChange?: (enabled: boolean) => void;
+  /** Rendering knobs — see src/render/renderSettings.ts. */
+  renderSettings?: RenderSettings;
+  onRenderSettingsChange?: (settings: RenderSettings) => void;
 }
 
-export default function SettingsMenu({ onOpenOfflineManager, locationStatus, onStopSharingLocation }: SettingsMenuProps = {}) {
+/** A labelled numeric field that only commits a valid, in-range value.
+ * Kept as local state while typing so a half-typed "1." or a briefly-empty
+ * box doesn't get clamped out from under the cursor. */
+function NumberSetting({
+  label,
+  hint,
+  value,
+  step,
+  onCommit,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  step: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const parsed = Number(draft);
+    if (Number.isFinite(parsed)) onCommit(parsed);
+    else setDraft(String(value));
+  };
+  return (
+    <label className="terrain-controls__row" style={{ justifyContent: "space-between" }} title={hint}>
+      <span>{label}</span>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        style={{ width: "4.5rem" }}
+      />
+    </label>
+  );
+}
+
+export default function SettingsMenu({
+  onOpenOfflineManager,
+  locationStatus,
+  onStopSharingLocation,
+  performanceMode,
+  onPerformanceModeChange,
+  renderSettings,
+  onRenderSettingsChange,
+}: SettingsMenuProps = {}) {
   const [open, setOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const { system, toggle } = useUnits();
@@ -135,6 +195,69 @@ export default function SettingsMenu({ onOpenOfflineManager, locationStatus, onS
                   Stop
                 </button>
               </div>
+            </>
+          )}
+          {onPerformanceModeChange && (
+            <>
+              <div className="settings-menu__divider" />
+              <span className="settings-menu__section-label">Performance</span>
+              <label className="terrain-controls__row">
+                <input
+                  type="checkbox"
+                  checked={performanceMode ?? false}
+                  onChange={(e) => onPerformanceModeChange(e.target.checked)}
+                />
+                Reduce 3D terrain quality for smoother performance
+              </label>
+            </>
+          )}
+          {renderSettings && onRenderSettingsChange && (
+            <>
+              <div className="settings-menu__divider" />
+              <span className="settings-menu__section-label">Rendering</span>
+              <NumberSetting
+                label="Resolution"
+                hint="Canvas pixel ratio. Lower is much faster (cost scales with the square) and slightly softer. 2 is a good default even on a 2.8x display."
+                value={renderSettings.pixelRatio}
+                step={0.25}
+                onCommit={(pixelRatio) => onRenderSettingsChange(clampRenderSettings({ ...renderSettings, pixelRatio }))}
+              />
+              <NumberSetting
+                label="Distance falloff"
+                hint="How fast detail drops off toward the horizon. Higher = coarser distant tiles = faster."
+                value={renderSettings.maxZoomLevelsOnScreen}
+                step={1}
+                onCommit={(maxZoomLevelsOnScreen) =>
+                  onRenderSettingsChange(clampRenderSettings({ ...renderSettings, maxZoomLevelsOnScreen }))
+                }
+              />
+              <NumberSetting
+                label="Tilt tile budget"
+                hint="How many more tiles a tilted view may use than a top-down one. Higher = the ground near you stays sharp when you tilt down."
+                value={renderSettings.tileCountMaxMinRatio}
+                step={1}
+                onCommit={(tileCountMaxMinRatio) =>
+                  onRenderSettingsChange(clampRenderSettings({ ...renderSettings, tileCountMaxMinRatio }))
+                }
+              />
+              <NumberSetting
+                label="Terrain distance falloff"
+                hint="Same as Distance falloff, but for 3D terrain geometry specifically. Higher = distant mountains use far less geometry = faster."
+                value={renderSettings.terrainMaxZoomLevelsOnScreen}
+                step={1}
+                onCommit={(terrainMaxZoomLevelsOnScreen) =>
+                  onRenderSettingsChange(clampRenderSettings({ ...renderSettings, terrainMaxZoomLevelsOnScreen }))
+                }
+              />
+              <NumberSetting
+                label="Terrain tilt budget"
+                hint="Same as Tilt tile budget, but for 3D terrain geometry specifically. Lower = a harder cap on total terrain geometry when tilted."
+                value={renderSettings.terrainTileCountMaxMinRatio}
+                step={1}
+                onCommit={(terrainTileCountMaxMinRatio) =>
+                  onRenderSettingsChange(clampRenderSettings({ ...renderSettings, terrainTileCountMaxMinRatio }))
+                }
+              />
             </>
           )}
           <div className="settings-menu__divider" />

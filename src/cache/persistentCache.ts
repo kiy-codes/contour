@@ -8,12 +8,14 @@
 // hop at all), stores raw bytes directly, and — as a bonus — works
 // identically in the plain browser preview, not just the real Tauri
 // window, since it's a standard Web API rather than a Tauri bridge.
+import { memGet, memPut, memDelete, memClear } from "./memoryCache";
+
 const DB_NAME = "contour-cache";
 const DB_VERSION = 2;
 const STORE = "entries";
 const META_STORE = "meta";
 const REGION_STORE = "regions";
-const DEFAULT_MAX_BYTES = 500 * 1024 * 1024; // 500 MB
+const DEFAULT_MAX_BYTES = 1000 * 1024 * 1024; // 1 GB
 
 export interface CacheStats {
   entry_count: number;
@@ -135,6 +137,19 @@ async function getMeta(db: IDBDatabase, key: string, fallback: number): Promise<
   return row?.v ?? fallback;
 }
 
+// maxBytes changes only via cacheSetMaxBytes (a rare, explicit user action),
+// so it's safe to cache in memory rather than re-reading it from its own
+// transaction on every single put — that was previously happening
+// unconditionally, even nowhere near the cap.
+let cachedMaxBytes: number | null = null;
+
+async function getCachedMaxBytes(db: IDBDatabase): Promise<number> {
+  if (cachedMaxBytes === null) {
+    cachedMaxBytes = await getMeta(db, "maxBytes", DEFAULT_MAX_BYTES);
+  }
+  return cachedMaxBytes;
+}
+
 function isPinned(entry: CacheEntry): boolean {
   return Boolean(entry.regionIds && entry.regionIds.length > 0);
 }
@@ -166,11 +181,15 @@ function findOldestUnpinned(store: IDBObjectStore): Promise<CacheEntry | null> {
  * this runs right after the put that might have crossed the line. Pinned
  * (offline-region) tiles are never touched here — if they alone exceed the
  * cap, that's expected (the user explicitly downloaded them); only
- * deleteRegion() removes them. */
-async function evictToFit(db: IDBDatabase): Promise<void> {
-  const maxBytes = await getMeta(db, "maxBytes", DEFAULT_MAX_BYTES);
-  let totalBytes = await getMeta(db, "totalBytes", 0);
-  while (totalBytes > maxBytes) {
+ * deleteRegion() removes them.
+ *
+ * Takes the current total/max as parameters rather than re-reading them —
+ * the caller already knows both (it just computed the new total from a put,
+ * or is setting maxBytes directly), so this avoids two more transactions on
+ * top of the ones the caller already paid for. */
+async function evictToFit(db: IDBDatabase, totalBytes: number, maxBytes: number): Promise<void> {
+  let total = totalBytes;
+  while (total > maxBytes) {
     const tx = db.transaction([STORE, META_STORE], "readwrite");
     const store = tx.objectStore(STORE);
     const oldest = await findOldestUnpinned(store);
@@ -179,32 +198,57 @@ async function evictToFit(db: IDBDatabase): Promise<void> {
       break;
     }
     store.delete(oldest.key);
-    totalBytes -= oldest.size;
-    tx.objectStore(META_STORE).put({ k: "totalBytes", v: totalBytes } satisfies MetaRow);
+    memDelete(oldest.key);
+    total -= oldest.size;
+    tx.objectStore(META_STORE).put({ k: "totalBytes", v: total } satisfies MetaRow);
     await txDone(tx);
   }
 }
 
-/** Reads a cached entry's raw bytes, touching its lastAccessed for LRU
- * purposes. Returns null on a miss, and also null (never throws) if
- * IndexedDB is unavailable for some reason, so callers can treat "no
- * cache" and "cache unavailable" the same way and fall back to network. */
+const inflightReads = new Map<string, Promise<{ bytes: Uint8Array; contentType: string | null } | null>>();
+
+/** Reads a cached entry's raw bytes. Returns null on a miss, and also null
+ * (never throws) if IndexedDB is unavailable for some reason, so callers can
+ * treat "no cache" and "cache unavailable" the same way and fall back to
+ * network.
+ *
+ * Checks the in-memory cache first (memoryCache.ts) — zero IndexedDB work on
+ * a hit, which is most of them once an area has been visited once. On a
+ * miss there, concurrent calls for the same key (confirmed to happen: a DEM
+ * tile is requested by both the terrain mesh and the hillshade layer from
+ * the same source) share one IndexedDB read via `inflightReads` rather than
+ * each opening their own transaction. The transaction itself is readonly —
+ * it used to be "readwrite" so it could touch `lastAccessed` on every hit,
+ * which meant rewriting the entire record (bytes included) just to bump a
+ * timestamp: a full flash write on every cache *read*. That touch is
+ * dropped entirely for now (disk LRU degrades to FIFO-by-write-time until a
+ * future schema restores real atime tracking — acceptable at a cap this
+ * rarely fires eviction). */
 export async function cacheGetBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string | null } | null> {
-  try {
-    const db = await openDb();
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const entry = (await reqToPromise(store.get(key))) as CacheEntry | undefined;
-    if (!entry) {
-      await txDone(tx);
+  const hot = memGet(key);
+  if (hot) return hot;
+
+  const inflight = inflightReads.get(key);
+  if (inflight) return inflight;
+
+  const promise = (async () => {
+    try {
+      const db = await openDb();
+      const tx = db.transaction(STORE, "readonly");
+      const entry = (await reqToPromise(tx.objectStore(STORE).get(key))) as CacheEntry | undefined;
+      if (!entry) return null;
+      // memPut takes ownership of the buffer — hand it a copy, since `entry`
+      // (and the ArrayBuffer inside it) is also about to be returned below.
+      memPut(key, entry.bytes.slice(0), entry.contentType);
+      return { bytes: new Uint8Array(entry.bytes), contentType: entry.contentType };
+    } catch {
       return null;
+    } finally {
+      inflightReads.delete(key);
     }
-    store.put({ ...entry, lastAccessed: Date.now() });
-    await txDone(tx);
-    return { bytes: new Uint8Array(entry.bytes), contentType: entry.contentType };
-  } catch {
-    return null;
-  }
+  })();
+  inflightReads.set(key, promise);
+  return promise;
 }
 
 /** Checks whether a key is already cached without touching lastAccessed or
@@ -250,6 +294,21 @@ export async function cacheAdoptForRegion(key: string, regionId: string): Promis
 /** `regionId`, when given, tags the entry as owned by that offline region
  * (pinned — see isPinned/evictToFit) in addition to writing its bytes. */
 export async function cachePutBytes(key: string, bytes: Uint8Array, contentType?: string | null, regionId?: string): Promise<void> {
+  // Copy synchronously, before the first await. MapLibre transfers the
+  // ArrayBuffer a protocol handler returns to its tile worker, which detaches
+  // it in this context — so by the time an awaited openDb()/store.get()
+  // resolves, `bytes` can be a view onto a detached buffer and this copy
+  // silently yields zero bytes (or throws into the catch below). That's what
+  // kept ordinary cache misses from ever being persisted: the cache only
+  // ever filled from the download manager, and every pan re-fetched forever.
+  const copy = bytes.slice();
+  const size = copy.byteLength;
+  // memPut takes ownership of its buffer, so it gets its own independent
+  // copy rather than sharing `copy.buffer` with the IndexedDB write below —
+  // IDB's structured clone doesn't transfer/detach on a plain put(), so
+  // sharing would happen to be safe today, but keeping the two paths
+  // strictly separate means that stays true even if that ever changes.
+  memPut(key, copy.buffer.slice(0), contentType ?? null);
   try {
     const db = await openDb();
     const tx = db.transaction([STORE, META_STORE], "readwrite");
@@ -257,8 +316,6 @@ export async function cachePutBytes(key: string, bytes: Uint8Array, contentType?
     const metaStore = tx.objectStore(META_STORE);
 
     const existing = (await reqToPromise(store.get(key))) as CacheEntry | undefined;
-    const copy = bytes.slice(); // defensive copy — never alias a buffer the caller might reuse
-    const size = copy.byteLength;
     const regionIds = regionId ? Array.from(new Set([...(existing?.regionIds ?? []), regionId])) : existing?.regionIds;
     store.put({
       key,
@@ -270,11 +327,18 @@ export async function cachePutBytes(key: string, bytes: Uint8Array, contentType?
     } satisfies CacheEntry);
 
     const currentTotal = (await reqToPromise(metaStore.get("totalBytes"))) as MetaRow | undefined;
-    const delta = size - (existing?.size ?? 0);
-    metaStore.put({ k: "totalBytes", v: (currentTotal?.v ?? 0) + delta } satisfies MetaRow);
+    const newTotal = (currentTotal?.v ?? 0) + (size - (existing?.size ?? 0));
+    metaStore.put({ k: "totalBytes", v: newTotal } satisfies MetaRow);
 
     await txDone(tx);
-    await evictToFit(db);
+
+    // Only actually evict when over the cap — this used to run
+    // unconditionally on every single put, opening two more transactions
+    // (for maxBytes and totalBytes) even at 20MB of a 1000MB cap.
+    const maxBytes = await getCachedMaxBytes(db);
+    if (newTotal > maxBytes) {
+      await evictToFit(db, newTotal, maxBytes);
+    }
   } catch {
     // Caching is best-effort — a failure here must never break the tile
     // fetch or search call that triggered it.
@@ -338,6 +402,7 @@ export async function cacheClear(): Promise<void> {
   });
   tx.objectStore(META_STORE).put({ k: "totalBytes", v: remainingBytes } satisfies MetaRow);
   await txDone(tx);
+  memClear();
 }
 
 export async function cacheSetMaxBytes(maxBytes: number): Promise<void> {
@@ -345,7 +410,9 @@ export async function cacheSetMaxBytes(maxBytes: number): Promise<void> {
   const tx = db.transaction(META_STORE, "readwrite");
   tx.objectStore(META_STORE).put({ k: "maxBytes", v: maxBytes } satisfies MetaRow);
   await txDone(tx);
-  await evictToFit(db);
+  cachedMaxBytes = maxBytes;
+  const totalBytes = await getMeta(db, "totalBytes", 0);
+  await evictToFit(db, totalBytes, maxBytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +512,7 @@ export async function deleteRegion(id: string): Promise<void> {
     if (remaining.length === 0) {
       freedBytes += entry.size;
       store.delete(entry.key);
+      memDelete(entry.key);
     } else {
       store.put({ ...entry, regionIds: remaining });
     }

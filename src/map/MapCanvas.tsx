@@ -24,7 +24,9 @@ import { useRouteLayer } from "../routing/useRouteLayer";
 import type { RouteAction, RouteEditorState } from "../routing/routeReducer";
 import type { Dispatch } from "react";
 import { registerTileCacheProtocol, withCacheScheme, CACHE_SCHEME } from "../cache/tileCacheProtocol";
+import { isAndroid } from "../platform";
 import type { Bbox } from "../offline/regionTiles";
+import { DEFAULT_RENDER_SETTINGS, effectivePixelRatio, type RenderSettings } from "../render/renderSettings";
 import { circleRing, pathLength } from "../geo/distance";
 import { polygonAreaSqMeters } from "../geo/area";
 import type { WeatherMapLayerId } from "../providers/WeatherProvider";
@@ -34,7 +36,6 @@ import type { AvalancheRegionFeature } from "../providers/AvalancheProvider";
 import { avalancheProvider } from "../providers/avalancheInstances";
 import { useAvalancheLayer, type AvalancheStatus } from "../avalanche/useAvalancheLayer";
 import { useGraticule } from "./useGraticule";
-import { WORLD_OVERVIEW_MAX_ZOOM } from "../offline/worldOverviewSeed";
 
 registerTileCacheProtocol();
 
@@ -52,11 +53,18 @@ const routingProvider = new CompositeRoutingProvider(import.meta.env.VITE_ORS_AP
 const ZOOM_DELTA_ANIMATE_THRESHOLD = 6;
 
 const DEM_SOURCE_ID = "terrain-dem";
+// How much further performance mode pushes maxZoomLevelsOnScreen past the
+// user's configured value: a higher zoom-level budget makes tile zoom decay
+// faster toward the horizon, so distant tiles get coarse (and cheap) sooner.
+// It deliberately does NOT touch tileCountMaxMinRatio — lowering that clamps
+// zoom uniformly across the whole frame, near ground included, which is
+// exactly the near-field blur we're fixing. Performance mode used to lower
+// it, and so made the blur worse.
+const PERFORMANCE_ZOOM_LEVELS_BONUS = 4;
 const HILLSHADE_LAYER_ID = "hillshade-layer";
 const SATELLITE_SOURCE_ID = "satellite-source";
 const SATELLITE_LAYER_ID = "satellite-layer";
-const SATELLITE_BACKDROP_SOURCE_ID = "satellite-backdrop-source";
-const SATELLITE_BACKDROP_LAYER_ID = "satellite-backdrop-layer";
+const SATELLITE_GAP_FILL_LAYER_ID = "satellite-gap-fill-layer";
 const TOPO_SOURCE_ID = "topo-source";
 const TOPO_LAYER_ID = "topo-layer";
 const USER_LOCATION_ACCURACY_SOURCE_ID = "user-location-accuracy";
@@ -102,6 +110,17 @@ export interface MapCanvasProps {
   mode?: MapStyleMode;
   terrainEnabled?: boolean;
   terrainExaggeration?: number;
+  /** Makes tile resolution fall off faster toward the horizon (see
+   * PERFORMANCE_ZOOM_LEVELS_BONUS) — far fewer, cheaper tiles and terrain
+   * meshes for MapLibre to build and hold in 3D, without touching near-field
+   * sharpness. Added for mobile, where holding many full-resolution terrain
+   * meshes was confirmed live to cause lag/tile-popping that desktop's GPU
+   * headroom hides. */
+  performanceMode?: boolean;
+  /** Live-tunable rendering knobs (canvas pixel ratio + the MapLibre LOD
+   * pair). Surfaced in the settings menu so they can be dialled in on a real
+   * device without a rebuild — see src/render/renderSettings.ts. */
+  renderSettings?: RenderSettings;
   contoursEnabled?: boolean;
   hikingTrailsEnabled?: boolean;
   longDistanceTrailsEnabled?: boolean;
@@ -191,29 +210,18 @@ function addTerrainLayers(map: MapLibreMap) {
  * look rather than imagery replacing the whole style. Hidden by default;
  * MapCanvas toggles visibility based on the `mode` prop.
  *
- * Also adds a second, coarser "backdrop" raster layer directly underneath
- * the real satellite layer, from the same tile URLs but capped at
- * WORLD_OVERVIEW_MAX_ZOOM — MapLibre overzooms a source's own maxzoom tiles
- * to cover any deeper view zoom, so this backdrop always has *some* real
- * imagery to show, at whatever zoom is actually requested. Pre-caching
- * alone (worldOverviewSeed.ts) doesn't achieve this by itself: MapLibre
- * only shows an ancestor tile as a placeholder if it already fetched and
- * registered that exact tile into its own in-memory source cache this
- * session — bytes sitting in IndexedDB that MapLibre never asked for don't
- * help (confirmed live: pre-seeding alone still left brand-new views
- * rendering fully transparent). A real, always-active low-zoom source is
- * what actually gets requested for every view, and having its tiles
- * pre-seeded on disk is what makes *that* request resolve instantly
- * instead of waiting on the network. */
+ * Also adds a plain solid-colour "gap fill" layer directly underneath the
+ * real satellite layer — without it, a tile that hasn't loaded yet is fully
+ * transparent, so the vector base style's own fill/water/land layers show
+ * through the gap (confirmed live: looks like the street map "leaking"
+ * through satellite mode). A previous attempt fixed this with a second full
+ * raster source (a coarse always-loaded backdrop, same imagery at a capped
+ * zoom) — real photo continuity in the gaps, but a second tile source/draw
+ * call for every satellite tile, on every platform. This solid layer costs
+ * one full-screen fill draw and zero network/cache work, at the price of a
+ * flat colour instead of a blurry real photo while a tile is in flight. */
 function addSatelliteLayer(map: MapLibreMap) {
   if (!esriApiKey || map.getSource(SATELLITE_SOURCE_ID)) return;
-  map.addSource(SATELLITE_BACKDROP_SOURCE_ID, {
-    type: "raster",
-    tiles: [withCacheScheme(satelliteProvider.getTileUrlTemplate(esriApiKey))],
-    tileSize: 256,
-    maxzoom: WORLD_OVERVIEW_MAX_ZOOM,
-    attribution: satelliteProvider.attribution.html,
-  });
   map.addSource(SATELLITE_SOURCE_ID, {
     type: "raster",
     tiles: [withCacheScheme(satelliteProvider.getTileUrlTemplate(esriApiKey))],
@@ -222,9 +230,9 @@ function addSatelliteLayer(map: MapLibreMap) {
     attribution: satelliteProvider.attribution.html,
   });
   const firstSymbolId = map.getStyle().layers?.find((l) => l.type === "symbol")?.id;
-  // Backdrop added first so it stacks below the main satellite layer.
+  // Gap-fill added first so it stacks below the main satellite layer.
   map.addLayer(
-    { id: SATELLITE_BACKDROP_LAYER_ID, type: "raster", source: SATELLITE_BACKDROP_SOURCE_ID, layout: { visibility: "none" } },
+    { id: SATELLITE_GAP_FILL_LAYER_ID, type: "background", paint: { "background-color": "#3a3a32" }, layout: { visibility: "none" } },
     firstSymbolId,
   );
   map.addLayer(
@@ -257,6 +265,8 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       mode = "standard",
       terrainEnabled = false,
       terrainExaggeration = 1.5,
+      performanceMode = false,
+      renderSettings = DEFAULT_RENDER_SETTINGS,
       contoursEnabled = false,
       hikingTrailsEnabled = false,
       longDistanceTrailsEnabled = false,
@@ -297,6 +307,10 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
     onElevationHoverRef.current = onElevationHover;
     const onMoveEndRef = useRef(onMoveEnd);
     onMoveEndRef.current = onMoveEnd;
+    // Read inside the map-construction effect, which runs once and must not
+    // re-run when these change.
+    const renderSettingsRef = useRef(renderSettings);
+    renderSettingsRef.current = renderSettings;
     const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
     const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
     const clearMeasurementRef = useRef<(() => void) | null>(null);
@@ -543,18 +557,32 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           // applies to both 2D and 3D terrain modes and the globe
           // projection alike.
           maxPitch: 80,
-          canvasContextAttributes: { antialias: true },
+          // MSAA is disproportionately expensive on a mobile tile-based GPU,
+          // and 3D terrain makes it worse — terrain renders through an
+          // offscreen pass, which is exactly where multisampling costs the
+          // most. At this DPR the difference is close to invisible on a
+          // phone, so Android trades it away; desktop keeps it.
+          canvasContextAttributes: { antialias: !isAndroid },
           attributionControl: false,
-          // Larger in-memory decoded-tile pool (default 512) — this is
-          // separate from the on-disk cache; a bigger one means panning
-          // back over recently-seen area redraws from memory instead of
-          // re-decoding from disk/network. Bumped again (2000 -> 4000):
-          // modern GPUs have plenty of headroom for this, and keeping more
-          // recently-viewed tiles decoded and ready — especially satellite
-          // imagery, the heaviest/slowest layer to re-fetch — directly
-          // reduces how often panning back over an area shows a blank gap
-          // while it re-downloads something it already had a moment ago.
-          maxTileCacheSize: 4000,
+          // Canvas resolution multiplier. Defaults below devicePixelRatio
+          // (2.81 on the test phone) because fragment cost scales with its
+          // square — user-adjustable in the settings menu.
+          pixelRatio: effectivePixelRatio(renderSettingsRef.current),
+          // How many zoom levels' worth of out-of-view tiles each source
+          // keeps decoded in memory, so panning back over recently-seen area
+          // redraws from memory instead of re-decoding from disk/network.
+          //
+          // This is the option that actually controls that pool. maxTileCacheSize
+          // (which this replaces) looked like the knob but was dead: MapLibre
+          // computes min(maxTileCacheSize, tilesInView * maxTileCacheZoomLevels),
+          // and the viewport-derived term is always far below the values we
+          // were passing, so it never bound. Android gets less than desktop
+          // because with terrain active the pool includes DEM tiles, each a
+          // decoded heightmap plus a built GPU mesh rather than one texture —
+          // hold too many on a phone and the OS reclaims GPU memory out from
+          // under MapLibre's own LRU, which is what caused the "tiles
+          // obviously reloading" lag confirmed live in 3D on a real device.
+          maxTileCacheZoomLevels: isAndroid ? 4 : 7,
           // Skip revalidation round-trips for tiles our own cache already
           // has — we manage staleness via the LRU cap, not HTTP expiry.
           refreshExpiredTiles: false,
@@ -580,8 +608,14 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
             "horizon-color": "#7fa8c9",
             "fog-color": "#cfe3f2",
             "sky-horizon-blend": 0.6,
-            "horizon-fog-blend": 0.5,
-            "fog-ground-blend": 0.4,
+            // These two used to be 0.5/0.4 — high enough that fog visibly
+            // washed out distant terrain at any zoom (unlike atmosphere-blend
+            // below, they aren't zoom-scaled, so they applied just as
+            // strongly zoomed into a mountain as zoomed out to the globe).
+            // Lowered so the horizon still reads as atmosphere/haze rather
+            // than a wall that hides distant peaks.
+            "horizon-fog-blend": 0.15,
+            "fog-ground-blend": 0.1,
             "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 12, 0],
           } as maplibregl.SkySpecification);
           addTerrainLayers(map);
@@ -643,19 +677,60 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       // (outstanding DEM tile requests keep the style "not fully loaded"),
       // which made this effect a permanent no-op when gated on it.
       if (!mapReady) return;
+
       mapReady.setTerrain(terrainEnabled ? { source: DEM_SOURCE_ID, exaggeration: terrainExaggeration } : null);
       if (mapReady.getLayer(HILLSHADE_LAYER_ID)) {
-        mapReady.setLayoutProperty(HILLSHADE_LAYER_ID, "visibility", terrainEnabled ? "visible" : "none");
+        // Hillshade is a full-screen fragment pass over the same DEM the 3D
+        // mesh already renders, so with terrain on it's drawing relief twice.
+        // Desktop absorbs that; on Android the mesh alone conveys the relief,
+        // so skip the second pass there.
+        const showHillshade = terrainEnabled && !isAndroid;
+        mapReady.setLayoutProperty(HILLSHADE_LAYER_ID, "visibility", showHillshade ? "visible" : "none");
       }
-    }, [terrainEnabled, terrainExaggeration, mapReady]);
+
+      // MapLibre's built-in pitch-aware LOD. Applied to EVERY source, not
+      // just the DEM — the base map, satellite and topo sources are what you
+      // actually look at, and while they were left on library defaults their
+      // zoom got clamped uniformly across the whole frame under pitch (near
+      // ground included), which is what made everything go blurry the moment
+      // the camera tilted.
+      //
+      // The two knobs pull in opposite directions and both matter:
+      //   maxZoomLevelsOnScreen ↑ makes zoom decay faster toward the horizon
+      //     (cheaper distant tiles),
+      //   tileCountMaxMinRatio ↑ raises the tile budget a pitched view gets
+      //     before MapLibre drops zoom across the entire frame at once.
+      // Sharp underfoot with an aggressive falloff into the distance — the
+      // Google Earth look — needs both high.
+      const maxZoomLevelsOnScreen = renderSettings.maxZoomLevelsOnScreen + (performanceMode ? PERFORMANCE_ZOOM_LEVELS_BONUS : 0);
+      mapReady.setSourceTileLodParams(maxZoomLevelsOnScreen, renderSettings.tileCountMaxMinRatio);
+
+      // Overwrite the DEM source with its own, much steeper curve. MapLibre's
+      // terrain mesh is a fixed-size grid reused for every tile regardless of
+      // zoom (see Terrain.meshSize in maplibre-gl's own source) — so the only
+      // "geometry LOD" that exists is however many of these fixed-cost tiles
+      // get drawn, and that count is driven by this exact same LOD function.
+      // Unlike the visual case, there's no reason to keep the near-field
+      // ratio high here: triangle count is the cost, not texture sharpness,
+      // and a coarser DEM sample at distance under the same mesh is nearly
+      // invisible next to a real photo. So this pushes both knobs harder —
+      // faster falloff AND a tighter cap on the pitched tile-count budget —
+      // to cut geometry throughput specifically, independent of how sharp
+      // the imagery on top of it looks.
+      const terrainMaxZoomLevelsOnScreen = renderSettings.terrainMaxZoomLevelsOnScreen + (performanceMode ? PERFORMANCE_ZOOM_LEVELS_BONUS : 0);
+      mapReady.setSourceTileLodParams(terrainMaxZoomLevelsOnScreen, renderSettings.terrainTileCountMaxMinRatio, DEM_SOURCE_ID);
+    }, [terrainEnabled, terrainExaggeration, performanceMode, renderSettings, mapReady]);
+
+    useEffect(() => {
+      if (!mapReady) return;
+      mapReady.setPixelRatio(effectivePixelRatio(renderSettings));
+    }, [renderSettings.pixelRatio, mapReady]);
 
     useEffect(() => {
       if (!mapReady || !mapReady.getLayer(SATELLITE_LAYER_ID)) return;
       const visibility = mode === "satellite" ? "visible" : "none";
       mapReady.setLayoutProperty(SATELLITE_LAYER_ID, "visibility", visibility);
-      if (mapReady.getLayer(SATELLITE_BACKDROP_LAYER_ID)) {
-        mapReady.setLayoutProperty(SATELLITE_BACKDROP_LAYER_ID, "visibility", visibility);
-      }
+      mapReady.setLayoutProperty(SATELLITE_GAP_FILL_LAYER_ID, "visibility", visibility);
     }, [mode, mapReady]);
 
     useEffect(() => {
@@ -712,17 +787,22 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
         if (map.getSource(RECT_SOURCE_ID)) map.removeSource(RECT_SOURCE_ID);
       };
 
-      const onMouseDown = (e: maplibregl.MapMouseEvent) => {
+      // Shared by both mouse and touch — a real device only ever fires one
+      // family of these (mousedown/move/up don't reliably fire for a touch
+      // drag, confirmed live: the rectangle just never appeared), so this
+      // needs its own listeners per input type rather than relying on
+      // synthesized mouse events from touch.
+      const onDown = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
         e.preventDefault();
         startLngLat = e.lngLat;
         map.dragPan.disable();
         map.dragRotate.disable();
       };
-      const onMouseMove = (e: maplibregl.MapMouseEvent) => {
+      const onMove = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
         if (!startLngLat) return;
         setRect(rectRingFor(startLngLat, e.lngLat).ring);
       };
-      const onMouseUp = (e: maplibregl.MapMouseEvent) => {
+      const onUp = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
         if (!startLngLat) return;
         const { bbox } = rectRingFor(startLngLat, e.lngLat);
         startLngLat = null;
@@ -737,14 +817,20 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       };
 
       map.getCanvas().style.cursor = "crosshair";
-      map.on("mousedown", onMouseDown);
-      map.on("mousemove", onMouseMove);
-      map.on("mouseup", onMouseUp);
+      map.on("mousedown", onDown);
+      map.on("mousemove", onMove);
+      map.on("mouseup", onUp);
+      map.on("touchstart", onDown);
+      map.on("touchmove", onMove);
+      map.on("touchend", onUp);
 
       return () => {
-        map.off("mousedown", onMouseDown);
-        map.off("mousemove", onMouseMove);
-        map.off("mouseup", onMouseUp);
+        map.off("mousedown", onDown);
+        map.off("mousemove", onMove);
+        map.off("mouseup", onUp);
+        map.off("touchstart", onDown);
+        map.off("touchmove", onMove);
+        map.off("touchend", onUp);
         map.dragPan.enable();
         map.dragRotate.enable();
         map.getCanvas().style.cursor = "";

@@ -37,7 +37,7 @@ export const OFFLINE_LAYERS: OfflineLayerMeta[] = [
  * against free community tile services. The UI warns well before this and
  * disables the start button past it; the download job also refuses as a
  * defense in depth. */
-export const MAX_REGION_TILES = 20_000;
+export const MAX_REGION_TILES = 500_000;
 
 const mapProvider = new OpenFreeMapProvider("liberty");
 const terrainProvider = new AwsTerrariumTerrainProvider();

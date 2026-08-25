@@ -1,5 +1,6 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import MapCanvas, { type MapCanvasHandle } from "./map/MapCanvas";
+import { loadRenderSettings, saveRenderSettings, type RenderSettings } from "./render/renderSettings";
 import RouteControls from "./map/RouteControls";
 import RouteStatsPanel from "./map/RouteStatsPanel";
 import SearchBar from "./map/SearchBar";
@@ -12,7 +13,6 @@ import RegionDrawTool from "./map/RegionDrawTool";
 import OfflineDownloadPanel from "./map/OfflineDownloadPanel";
 import OfflineRegionsManager from "./map/OfflineRegionsManager";
 import type { Bbox } from "./offline/regionTiles";
-import { ensureWorldOverviewSeeded } from "./offline/worldOverviewSeed";
 import LocationControl from "./map/LocationControl";
 import { useGeolocation } from "./geo/useGeolocation";
 import GlassDistortionFilter from "./theme/GlassDistortionFilter";
@@ -83,16 +83,17 @@ function App() {
   const mapHandle = useRef<MapCanvasHandle>(null);
   const geolocation = useGeolocation();
   const [mode, setMode] = useState<MapStyleMode>("standard");
-  // First time satellite mode is actually turned on, kick off a one-time
-  // background download of a small world-overview tile set at low zoom —
-  // see worldOverviewSeed.ts for why (no-ops instantly once already done or
-  // without an Esri key; someone who never opens satellite mode never
-  // triggers any of this).
-  useEffect(() => {
-    if (mode === "satellite") void ensureWorldOverviewSeeded();
-  }, [mode]);
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [exaggeration, setExaggeration] = useState(1);
+  // Mobile-only for now (see SettingsMenu) — makes tile detail fall off
+  // faster toward the horizon, cutting the tile churn behind the lag
+  // confirmed live in 3D on a real Android device.
+  const [performanceMode, setPerformanceMode] = useState(false);
+  const [renderSettings, setRenderSettings] = useState(loadRenderSettings);
+  const updateRenderSettings = useCallback((next: RenderSettings) => {
+    setRenderSettings(next);
+    saveRenderSettings(next);
+  }, []);
   const [contoursEnabled, setContoursEnabled] = useState(false);
   const [hikingTrailsEnabled, setHikingTrailsEnabled] = useState(false);
   const [longDistanceTrailsEnabled, setLongDistanceTrailsEnabled] = useState(false);
@@ -545,6 +546,8 @@ function App() {
         mode={mode}
         terrainEnabled={terrainEnabled}
         terrainExaggeration={exaggeration}
+        performanceMode={performanceMode}
+        renderSettings={renderSettings}
         contoursEnabled={contoursEnabled}
         hikingTrailsEnabled={hikingTrailsEnabled}
         longDistanceTrailsEnabled={longDistanceTrailsEnabled}
@@ -590,7 +593,27 @@ function App() {
       {isMobile ? (
         <>
           <div className="mobile-settings-slot">
-            <SettingsMenu />
+            <SettingsMenu
+              locationStatus={geolocation.status}
+              onStopSharingLocation={geolocation.disable}
+              performanceMode={performanceMode}
+              onPerformanceModeChange={setPerformanceMode}
+              renderSettings={renderSettings}
+              onRenderSettingsChange={updateRenderSettings}
+              onOpenOfflineManager={() => setOfflineManagerOpen(true)}
+            />
+          </div>
+          <div className="mobile-location-slot">
+            <LocationControl
+              status={geolocation.status}
+              errorMessage={geolocation.errorMessage}
+              onEnable={geolocation.enable}
+              onRecenter={handleRecenterOnLocation}
+            />
+          </div>
+          <div className="mobile-region-draw-slot">
+            <RegionDrawTool active={regionDrawActive} onToggle={handleToggleRegionDraw} />
+            {drawnBbox && <OfflineDownloadPanel bbox={drawnBbox} hasEsri={hasEsri} onClose={() => setDrawnBbox(null)} />}
           </div>
           <LayersSheet
             mode={mode}
@@ -646,6 +669,8 @@ function App() {
             onOpenOfflineManager={() => setOfflineManagerOpen(true)}
             locationStatus={geolocation.status}
             onStopSharingLocation={geolocation.disable}
+            renderSettings={renderSettings}
+            onRenderSettingsChange={updateRenderSettings}
           />
           <div className="right-controls__row">
             <LocationControl
@@ -767,7 +792,7 @@ function App() {
           )}
         </div>
       )}
-      {!isMobile && offlineManagerOpen && (
+      {offlineManagerOpen && (
         <OfflineRegionsManager hasEsri={hasEsri} onClose={() => setOfflineManagerOpen(false)} onFlyTo={handleFlyToOfflineRegion} />
       )}
       {terrainEnabled && (
