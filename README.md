@@ -125,3 +125,5 @@ See [`ROADMAP.md`](./ROADMAP.md) for the fuller list plus what's likely to come 
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+#   c o n t o u r  
+ 
