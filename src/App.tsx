@@ -15,6 +15,10 @@ import OfflineRegionsManager from "./map/OfflineRegionsManager";
 import type { Bbox } from "./offline/regionTiles";
 import LocationControl from "./map/LocationControl";
 import { useGeolocation } from "./geo/useGeolocation";
+import { useWakeLock } from "./geo/useWakeLock";
+import { useRouteNavigation } from "./routing/useRouteNavigation";
+import { useSimulatedNavigationFix } from "./routing/useSimulatedNavigationFix";
+import NavigationPanel from "./map/NavigationPanel";
 import GlassDistortionFilter from "./theme/GlassDistortionFilter";
 import { useIsMobile } from "./theme/useIsMobile";
 import { CompositeGeocodingProvider, type SearchResult } from "./providers/GeocodingProvider";
@@ -39,6 +43,8 @@ import type { AvalancheRegionFeature } from "./providers/AvalancheProvider";
 import type { AvalancheStatus } from "./avalanche/useAvalancheLayer";
 import AvalancheInfoPanel from "./map/AvalancheInfoPanel";
 import RoutePlannerPanel from "./map/RoutePlannerPanel";
+import SavedRoutesPanel from "./map/SavedRoutesPanel";
+import { createSavedRoute, type SavedRoute } from "./routing/savedRoutes";
 import type { RouteConstraints, RoutingMode } from "./providers/RoutingProvider";
 import { formatCoordinate, coordinateToClipboardText } from "./geo/coordinateFormat";
 import { useCoordinateFormat } from "./geo/CoordinateFormatContext";
@@ -81,7 +87,11 @@ function App() {
   const isMobile = useIsMobile();
   const { format: coordFormat } = useCoordinateFormat();
   const mapHandle = useRef<MapCanvasHandle>(null);
-  const geolocation = useGeolocation();
+  // Live GPS route-following. Foreground-only — the geolocation plugin
+  // tears down updates the moment the app is backgrounded/screen-locks (see
+  // useGeolocation.ts), so this is a real, documented limit, not a bug.
+  const [navigationActive, setNavigationActive] = useState(false);
+  const geolocation = useGeolocation({ highFrequency: navigationActive });
   const [mode, setMode] = useState<MapStyleMode>("standard");
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [exaggeration, setExaggeration] = useState(1);
@@ -134,6 +144,7 @@ function App() {
   const [avalancheFetchedAt, setAvalancheFetchedAt] = useState<number | null>(null);
   const [avalancheTarget, setAvalancheTarget] = useState<AvalancheRegionFeature | null>(null);
   const [routePlannerOpen, setRoutePlannerOpen] = useState(false);
+  const [savedRoutesOpen, setSavedRoutesOpen] = useState(false);
   const [plannerStartPoint, setPlannerStartPoint] = useState<LngLat | null>(null);
   const [plannerStartLabel, setPlannerStartLabel] = useState<string>("Map center");
   const [plannerEndPoint, setPlannerEndPoint] = useState<LngLat | null>(null);
@@ -148,6 +159,27 @@ function App() {
   // Whichever route is actually on screen right now — an imported track
   // takes precedence over an in-progress computed route.
   const activeResult = importedRoute ?? routeResult;
+
+  useWakeLock(navigationActive);
+  // DEV-only fallback so navigation mode can be exercised on the desktop
+  // dev server without real GPS — always null in a production build (the
+  // import.meta.env.DEV check), so this never affects a shipped app.
+  const simulatedNavigationFix = useSimulatedNavigationFix(activeResult, import.meta.env.DEV && navigationActive);
+  const { progress: navigationProgress, etaSeconds: navigationEtaSeconds } = useRouteNavigation(
+    activeResult,
+    navigationActive,
+    geolocation.position,
+    simulatedNavigationFix,
+  );
+  // Real GPS still wins for the on-map marker too — see useRouteNavigation
+  // for why the simulator is a fallback, never an override.
+  const navigationDisplayFix = geolocation.position ?? simulatedNavigationFix;
+
+  const handleStartNavigation = () => {
+    if (geolocation.status !== "active" && geolocation.status !== "locating") geolocation.enable();
+    setNavigationActive(true);
+  };
+  const handleStopNavigation = () => setNavigationActive(false);
 
   // On mobile, RouteControls' floating panel becomes a full-width bottom
   // bar (see RouteControls.tsx) — showing the stats panel at the same time
@@ -256,8 +288,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    mapHandle.current?.showUserLocationMarker(geolocation.position);
-  }, [geolocation.position]);
+    mapHandle.current?.showUserLocationMarker(navigationActive ? navigationDisplayFix : geolocation.position);
+  }, [geolocation.position, navigationActive, navigationDisplayFix]);
 
   const handleRecenterOnLocation = () => {
     if (geolocation.position) mapHandle.current?.flyTo(geolocation.position.point, { pitch: 0 });
@@ -314,6 +346,11 @@ function App() {
   // turned them on/off themselves mid-edit), finishing leaves that alone.
   const hikingTrailsWasOffRef = useRef(false);
   const handleStartRoute = () => {
+    // Mutually exclusive with the route planner and saved-routes library —
+    // all three are ways to get a route onto the map, and left open
+    // together they fight over the same screen space.
+    setRoutePlannerOpen(false);
+    setSavedRoutesOpen(false);
     hikingTrailsWasOffRef.current = !hikingTrailsEnabled;
     if (!hikingTrailsEnabled) setHikingTrailsEnabled(true);
     // Route-editing clicks add waypoints — clear any other click-interaction
@@ -441,10 +478,63 @@ function App() {
   };
 
   const handleOpenRoutePlanner = () => {
+    // Same mutual exclusivity as above, other direction — pause (not clear)
+    // any in-progress manual/ORS editing, same as the Finish button.
+    if (routeState.isEditing) routeDispatch({ type: "STOP_EDITING" });
+    setSavedRoutesOpen(false);
     setPlannerStartPoint(mapCenter ?? mapHandle.current?.getCenter() ?? null);
     setPlannerStartLabel("Map center");
     setPlannerEndPoint(null);
     setRoutePlannerOpen(true);
+  };
+
+  const handleOpenSavedRoutes = () => {
+    setRoutePlannerOpen(false);
+    setSavedRoutesOpen(true);
+  };
+
+  // Imported/planner-generated routes have no click-added waypoint list —
+  // only routeState.waypoints (manual/ORS multi-point) does, and only while
+  // that's actually what's being shown (not while browsing an imported
+  // track that happens to coexist with a stale waypoint list from before).
+  const handleSaveCurrentRoute = async () => {
+    if (!activeResult) return;
+    const defaultName = importedRoute ? importedRouteName : `Route ${new Date().toLocaleDateString()}`;
+    const name = window.prompt("Save route as:", defaultName);
+    if (!name || !name.trim()) return;
+    await createSavedRoute({
+      name: name.trim(),
+      mode: routeState.mode,
+      waypoints: !importedRoute && routeState.waypoints.length > 0 ? routeState.waypoints : undefined,
+      result: activeResult,
+    });
+    setGpxNotice(`Saved "${name.trim()}"`);
+  };
+
+  const handleLoadSavedRoute = (route: SavedRoute) => {
+    setSavedRoutesOpen(false);
+    setRoutePlannerOpen(false);
+    if (route.waypoints && route.waypoints.length > 0) {
+      // Waypoint-editable — restore into the live editor, same path as
+      // drawing it fresh, and drop any unrelated imported track so the two
+      // don't both claim to be "the" active route.
+      setImportedRoute(null);
+      setRouteResult(null);
+      setRouteError(null);
+      routeDispatch({ type: "CLEAR" });
+      routeDispatch({ type: "LOAD_WAYPOINTS", waypoints: route.waypoints, mode: route.mode });
+    } else {
+      // View-only (imported/planner-generated) — same path as importing a
+      // GPX file or a planner result.
+      routeDispatch({ type: "CLEAR" });
+      routeDispatch({ type: "STOP_EDITING" });
+      setRouteResult(null);
+      setRouteError(null);
+      setImportedRouteName(route.name);
+      setImportedRoute(route.result);
+    }
+    const bounds = boundsOf(route.result.points);
+    if (bounds) mapHandle.current?.flyToResult(route.result.points[0], bounds);
   };
   const handleUseMapCenterStart = () => {
     setPlannerStartPoint(mapCenter ?? mapHandle.current?.getCenter() ?? null);
@@ -560,6 +650,7 @@ function App() {
         routeState={routeState}
         routeDispatch={routeDispatch}
         importedRoute={importedRoute}
+        navigationProgress={navigationProgress}
         onElevationHover={handleElevationHover}
         onSkiRunClick={handleSkiRunClick}
         onSkiLiftClick={handleSkiLiftClick}
@@ -642,26 +733,30 @@ function App() {
             liftNamesEnabled={skiLiftNamesEnabled}
             onLiftNamesEnabledChange={setSkiLiftNamesEnabled}
           />
-          <RouteControls
-            isMobile
-            isEditing={routeState.isEditing}
-            hasWaypoints={routeState.waypoints.length > 0}
-            hasImportedRoute={importedRoute !== null}
-            mode={routeState.mode}
-            hasOrs={hasOrs}
-            canUndo={routeState.past.length > 0}
-            canRedo={routeState.future.length > 0}
-            onStart={handleStartRoute}
-            onFinish={handleFinishRoute}
-            onClear={handleClearRoute}
-            onImportGpx={handleImportGpx}
-            onExportGpx={handleExportGpx}
-            onExportGeoJson={handleExportGeoJson}
-            onExportGarmin={() => setGarminExportOpen(true)}
-            onUndo={() => routeDispatch({ type: "UNDO" })}
-            onRedo={() => routeDispatch({ type: "REDO" })}
-            onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
-          />
+          {!navigationActive && (
+            <RouteControls
+              isMobile
+              isEditing={routeState.isEditing}
+              hasWaypoints={routeState.waypoints.length > 0}
+              hasImportedRoute={importedRoute !== null}
+              mode={routeState.mode}
+              hasOrs={hasOrs}
+              canUndo={routeState.past.length > 0}
+              canRedo={routeState.future.length > 0}
+              onStart={handleStartRoute}
+              onFinish={handleFinishRoute}
+              onClear={handleClearRoute}
+              onImportGpx={handleImportGpx}
+              onExportGpx={handleExportGpx}
+              onExportGeoJson={handleExportGeoJson}
+              onExportGarmin={() => setGarminExportOpen(true)}
+              onUndo={() => routeDispatch({ type: "UNDO" })}
+              onRedo={() => routeDispatch({ type: "REDO" })}
+              onModeChange={(newMode) => routeDispatch({ type: "SET_MODE", mode: newMode })}
+              canNavigate={activeResult !== null}
+              onStartNavigation={handleStartNavigation}
+            />
+          )}
         </>
       ) : (
         <div className="right-controls">
@@ -746,6 +841,7 @@ function App() {
             hasLocationFix={geolocation.position !== null}
             onStartFromLocation={handleStartRouteHere}
             onPlanRoute={handleOpenRoutePlanner}
+            onOpenSavedRoutes={handleOpenSavedRoutes}
             onStart={handleStartRoute}
             onFinish={handleFinishRoute}
             onClear={handleClearRoute}
@@ -782,6 +878,7 @@ function App() {
               }}
             />
           )}
+          {savedRoutesOpen && <SavedRoutesPanel onClose={() => setSavedRoutesOpen(false)} onLoad={handleLoadSavedRoute} />}
           {garminExportOpen && garminExportResult && (
             <GarminExportPanel
               result={garminExportResult}
@@ -809,26 +906,37 @@ function App() {
       {!isMobile && !isOnline && <div className="offline-badge">Offline</div>}
       <div className="version-badge">v2.0</div>
       {gpxNotice && <div className="gpx-notice">{gpxNotice}</div>}
-      <RouteStatsPanel
-        result={mobileRouteBarShowing ? null : activeResult}
-        error={importedRoute ? null : routeError}
-        waypointCount={routeState.waypoints.length}
-        waypoints={routeState.waypoints}
-        profile={profileStats.profile}
-        ascentMeters={ascentMeters}
-        descentMeters={descentMeters}
-        maxSlopePercent={profileStats.hasElevationData ? profileStats.maxSlopePercent : undefined}
-        avgSlopePercent={profileStats.hasElevationData ? profileStats.avgSlopePercent : undefined}
-        minElevationMeters={profileStats.hasElevationData ? profileStats.minElevationMeters : undefined}
-        maxElevationMeters={profileStats.hasElevationData ? profileStats.maxElevationMeters : undefined}
-        steepSections={profileStats.hasElevationData ? profileStats.steepSections : []}
-        durationSeconds={durationSeconds}
-        isDurationEstimated={isDurationEstimated}
-        onProfileHover={handleProfileHover}
-        onReturnToRoute={handleReturnToRoute}
-        isEditing={routeState.isEditing}
-        onReorderWaypoint={(from, to) => routeDispatch({ type: "REORDER_WAYPOINT", from, to })}
-      />
+      {navigationActive ? (
+        <NavigationPanel
+          progress={navigationProgress}
+          etaSeconds={navigationEtaSeconds}
+          speedMetersPerSecond={navigationDisplayFix?.speed ?? null}
+          onStop={handleStopNavigation}
+        />
+      ) : (
+        <RouteStatsPanel
+          result={mobileRouteBarShowing ? null : activeResult}
+          error={importedRoute ? null : routeError}
+          waypointCount={routeState.waypoints.length}
+          waypoints={routeState.waypoints}
+          profile={profileStats.profile}
+          ascentMeters={ascentMeters}
+          descentMeters={descentMeters}
+          maxSlopePercent={profileStats.hasElevationData ? profileStats.maxSlopePercent : undefined}
+          avgSlopePercent={profileStats.hasElevationData ? profileStats.avgSlopePercent : undefined}
+          minElevationMeters={profileStats.hasElevationData ? profileStats.minElevationMeters : undefined}
+          maxElevationMeters={profileStats.hasElevationData ? profileStats.maxElevationMeters : undefined}
+          steepSections={profileStats.hasElevationData ? profileStats.steepSections : []}
+          durationSeconds={durationSeconds}
+          isDurationEstimated={isDurationEstimated}
+          onProfileHover={handleProfileHover}
+          onReturnToRoute={handleReturnToRoute}
+          isEditing={routeState.isEditing}
+          onReorderWaypoint={(from, to) => routeDispatch({ type: "REORDER_WAYPOINT", from, to })}
+          onStartNavigation={handleStartNavigation}
+          onSaveRoute={handleSaveCurrentRoute}
+        />
+      )}
     </main>
   );
 }

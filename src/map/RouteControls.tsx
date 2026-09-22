@@ -35,6 +35,17 @@ export interface RouteControlsProps {
   /** Desktop-only entry point into the smart route planner (see
    * RoutePlannerPanel) — omitted on mobile. */
   onPlanRoute?: () => void;
+  /** Desktop-only entry point into the saved-routes library (see
+   * SavedRoutesPanel) — omitted on mobile, same as onPlanRoute. */
+  onOpenSavedRoutes?: () => void;
+  /** Mobile-only entry point into live navigation. Desktop gets its
+   * "Navigate" button from RouteStatsPanel instead, which stays reachable
+   * there — but on mobile that panel is hidden for as long as this bar is
+   * showing (RouteStatsPanel's result is forced null while a route exists,
+   * see App.tsx's mobileRouteBarShowing), so this is the only reachable
+   * entry point once a route is finished. */
+  canNavigate?: boolean;
+  onStartNavigation?: () => void;
 }
 
 const MODE_OPTIONS: { mode: RoutingMode; label: string; needsOrs: boolean }[] = [
@@ -67,6 +78,9 @@ export default function RouteControls({
   hasLocationFix = false,
   onStartFromLocation,
   onPlanRoute,
+  onOpenSavedRoutes,
+  canNavigate = false,
+  onStartNavigation,
 }: RouteControlsProps) {
   // The full editing panel below is its own branch, not a toggled child —
   // so its close (Finish+Clear collapsing back down) needs the same
@@ -100,6 +114,11 @@ export default function RouteControls({
             Plan a route
           </button>
         )}
+        {onOpenSavedRoutes && (
+          <button className="glass-btn" onClick={onOpenSavedRoutes}>
+            My routes
+          </button>
+        )}
         <div className="route-controls__row">
           <button onClick={onImportGpx}>Import track</button>
         </div>
@@ -110,6 +129,13 @@ export default function RouteControls({
   if (!fullPanelRendered && hasImportedRoute) {
     return (
       <div className={isMobile ? "route-controls-bar" : "terrain-controls"}>
+        {isMobile && canNavigate && onStartNavigation && (
+          <div className="route-controls__row">
+            <button className="route-controls__navigate" onClick={onStartNavigation}>
+              Navigate
+            </button>
+          </div>
+        )}
         <div className="route-controls__row">
           <button onClick={onExportGpx}>Export GPX</button>
           {onExportGeoJson && <button onClick={onExportGeoJson}>Export GeoJSON</button>}
@@ -174,6 +200,13 @@ export default function RouteControls({
           Clear
         </button>
       </div>
+      {isMobile && !isEditing && canNavigate && onStartNavigation && (
+        <div className="route-controls__row">
+          <button className="route-controls__navigate" onClick={onStartNavigation}>
+            Navigate
+          </button>
+        </div>
+      )}
       <div className="route-controls__row">
         <button onClick={onExportGpx} disabled={!hasWaypoints}>
           Export GPX
@@ -194,6 +227,12 @@ export default function RouteControls({
       <div className="route-controls__row">
         <button onClick={onImportGpx}>Import track</button>
       </div>
+      {(onPlanRoute || onOpenSavedRoutes) && (
+        <div className="route-controls__row">
+          {onPlanRoute && <button onClick={onPlanRoute}>Plan a route</button>}
+          {onOpenSavedRoutes && <button onClick={onOpenSavedRoutes}>My routes</button>}
+        </div>
+      )}
     </div>
   );
 }

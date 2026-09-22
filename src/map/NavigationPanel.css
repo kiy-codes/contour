@@ -1,0 +1,38 @@
+.navigation-panel {
+  align-items: center;
+}
+
+.navigation-panel__waiting {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.navigation-panel__off-route {
+  align-self: stretch;
+  text-align: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.navigation-panel__stop {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 6px 16px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.navigation-panel__stop:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+}

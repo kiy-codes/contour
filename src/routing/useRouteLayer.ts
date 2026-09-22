@@ -5,13 +5,20 @@ import type { Dispatch } from "react";
 import type { RouteAction, RouteEditorState } from "./routeReducer";
 import type { RoutingProvider, RouteResult } from "../providers/RoutingProvider";
 import type { OutdoorDataProvider } from "../providers/OutdoorDataProvider";
-import type { LngLat } from "../providers/types";
+import type { LngLat, LngLatElevation } from "../providers/types";
+import type { RouteProgress } from "../geo/routeProgress";
 import { nearestPointOnLines } from "../geo/nearestPointOnLine";
 import { describeNetworkError } from "../net/fetchTimeout";
 
 const ROUTE_SOURCE_ID = "route-line-source";
 const ROUTE_CASING_ID = "route-line-casing";
 const ROUTE_LINE_ID = "route-line";
+// Drawn on top of the (unchanged) route-line/casing pair, covering only the
+// already-walked portion in a dimmed grey — an overlay rather than a
+// rebuild of the main route geometry, so navigation mode adds a layer
+// without touching the existing waytype-colored rendering at all.
+const ROUTE_TRAVELED_SOURCE_ID = "route-traveled-source";
+const ROUTE_TRAVELED_LINE_ID = "route-traveled-line";
 
 // Clicks/drags within this distance of a trail snap onto it; farther than
 // this, the point is assumed to genuinely be off-trail (e.g. a trailhead
@@ -96,6 +103,22 @@ function ensureRouteLayers(map: MapLibreMap) {
       "line-width": 4,
     },
   });
+  map.addSource(ROUTE_TRAVELED_SOURCE_ID, { type: "geojson", data: EMPTY_LINE });
+  map.addLayer({
+    id: ROUTE_TRAVELED_LINE_ID,
+    type: "line",
+    source: ROUTE_TRAVELED_SOURCE_ID,
+    layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+    paint: { "line-color": "#9ca3af", "line-width": 4, "line-opacity": 0.85 },
+  });
+}
+
+/** The walked portion of the route, from the start up to and including the
+ * live GPS fix's projected point — used to paint the traveled overlay. */
+function buildTraveledGeoJson(points: LngLatElevation[], progress: RouteProgress): GeoJSON.Feature<GeoJSON.LineString> {
+  const coords = points.slice(0, progress.segmentIndex + 1).map((p) => [p.lng, p.lat] as [number, number]);
+  coords.push([progress.projectedPoint.lng, progress.projectedPoint.lat]);
+  return { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } };
 }
 
 function makeMarkerElement(index: number, total: number): HTMLDivElement {
@@ -122,6 +145,9 @@ export function useRouteLayer(
    * an imported GPX track, which is already a finished, fixed geometry
    * (not something the routing provider or waypoint editor should touch). */
   importedResult: RouteResult | null = null,
+  /** Live navigation progress along the currently-displayed route, or null
+   * when not navigating — draws/hides the traveled-portion overlay. */
+  navigationProgress: RouteProgress | null = null,
 ) {
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const stateRef = useRef(state);
@@ -130,6 +156,10 @@ export function useRouteLayer(
   dispatchRef.current = dispatch;
   const onRouteComputedRef = useRef(onRouteComputed);
   onRouteComputedRef.current = onRouteComputed;
+  // The points of whichever route is currently on screen (imported or
+  // computed) — kept so the traveled-overlay effect below can build its
+  // geometry without re-deriving "what route is showing" itself.
+  const currentRoutePointsRef = useRef<LngLatElevation[] | null>(null);
 
   // Map click-to-add-waypoint, only while editing.
   useEffect(() => {
@@ -187,6 +217,7 @@ export function useRouteLayer(
     if (!map || !importedResult) return;
     const source = map.getSource(ROUTE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
     source?.setData(buildRouteGeoJson(importedResult));
+    currentRoutePointsRef.current = importedResult.points;
     onRouteComputedRef.current(importedResult, null);
   }, [map, importedResult]);
 
@@ -198,6 +229,7 @@ export function useRouteLayer(
 
     if (state.waypoints.length < 2) {
       source?.setData(EMPTY_LINE);
+      currentRoutePointsRef.current = null;
       onRouteComputedRef.current(null, null);
       return;
     }
@@ -208,6 +240,7 @@ export function useRouteLayer(
         const result = await routingProvider.route(state.waypoints, state.mode);
         if (cancelled) return;
         source?.setData(buildRouteGeoJson(result));
+        currentRoutePointsRef.current = result.points;
         onRouteComputedRef.current(result, null);
       } catch (err) {
         if (cancelled) return;
@@ -221,4 +254,22 @@ export function useRouteLayer(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, state.waypoints, state.mode, routingProvider, importedResult]);
+
+  // Traveled-portion overlay: visible only while actively navigating, drawn
+  // from the route's own points (whichever route is on screen) up to the
+  // live GPS fix's projected point. Hidden — not just an empty line — when
+  // not navigating, so it never has to be reasoned about as part of the
+  // normal editing/viewing look.
+  useEffect(() => {
+    if (!map || !map.getLayer(ROUTE_TRAVELED_LINE_ID)) return;
+    const source = map.getSource(ROUTE_TRAVELED_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    const points = currentRoutePointsRef.current;
+
+    if (!navigationProgress || !points) {
+      map.setLayoutProperty(ROUTE_TRAVELED_LINE_ID, "visibility", "none");
+      return;
+    }
+    source?.setData(buildTraveledGeoJson(points, navigationProgress));
+    map.setLayoutProperty(ROUTE_TRAVELED_LINE_ID, "visibility", "visible");
+  }, [map, navigationProgress]);
 }

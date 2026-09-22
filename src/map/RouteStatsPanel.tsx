@@ -30,6 +30,13 @@ export interface RouteStatsPanelProps {
    * generated route, which isn't waypoint-editable). */
   isEditing?: boolean;
   onReorderWaypoint?: (from: number, to: number) => void;
+  /** Omit to hide the "Navigate" entry point entirely — the caller only
+   * passes this when there's a route to follow and navigation isn't
+   * already active (this panel is swapped for NavigationPanel while it is). */
+  onStartNavigation?: () => void;
+  /** Omit to hide "Save route" — the caller only passes this when there's
+   * a route worth keeping (see App.tsx's activeResult). */
+  onSaveRoute?: () => void;
 }
 
 const CATEGORY_COLOR: Record<WaytypeSegment["category"], string> = {
@@ -76,6 +83,8 @@ export default function RouteStatsPanel({
   onReturnToRoute,
   isEditing = false,
   onReorderWaypoint,
+  onStartNavigation,
+  onSaveRoute,
 }: RouteStatsPanelProps) {
   const { formatDistance, formatElevation, formatSlope } = useUnits();
   const { format: coordFormat } = useCoordinateFormat();
@@ -153,7 +162,27 @@ export default function RouteStatsPanel({
         </div>
       </div>
 
-      {profile.length > 1 && <ElevationProfileChart profile={profile} onHover={onProfileHover} />}
+      {(onStartNavigation || onSaveRoute) && (
+        <div className="route-stats-panel__actions">
+          {onSaveRoute && (
+            <button className="route-stats-panel__save" onClick={onSaveRoute}>
+              Save route
+            </button>
+          )}
+          {onStartNavigation && (
+            <button className="route-stats-panel__navigate" onClick={onStartNavigation}>
+              Navigate
+            </button>
+          )}
+        </div>
+      )}
+
+      {profile.length > 1 && (
+        <details className="route-stats-panel__elevation" open>
+          <summary>Elevation profile</summary>
+          <ElevationProfileChart profile={profile} onHover={onProfileHover} />
+        </details>
+      )}
 
       {categorySummary && (
         <div className="route-stats-panel__breakdown">

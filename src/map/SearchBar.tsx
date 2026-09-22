@@ -39,8 +39,17 @@ export default function SearchBar({ provider, onSelect }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { rendered, closing } = useExitTransition(open, CLOSE_ANIMATION_MS);
+  // pick() sets query to the selected result's label, which would otherwise
+  // re-trigger the search effect below and reopen the list once that
+  // re-search resolves — set right before that setQuery call, consumed
+  // (and cleared) by the very next effect run so it only skips that one.
+  const suppressNextSearchRef = useRef(false);
 
   useEffect(() => {
+    if (suppressNextSearchRef.current) {
+      suppressNextSearchRef.current = false;
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     abortRef.current?.abort();
 
@@ -91,6 +100,7 @@ export default function SearchBar({ provider, onSelect }: SearchBarProps) {
 
   const pick = (result: SearchResult) => {
     onSelect(result);
+    suppressNextSearchRef.current = true;
     setQuery(result.label);
     setOpen(false);
     inputRef.current?.blur();

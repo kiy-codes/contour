@@ -19,7 +19,11 @@ export type RouteAction =
   | { type: "SET_MODE"; mode: RoutingMode }
   | { type: "CLEAR" }
   | { type: "UNDO" }
-  | { type: "REDO" };
+  | { type: "REDO" }
+  /** Restores a saved route's waypoints + mode in one shot (see
+   * savedRoutes.ts) — a fresh starting point for undo history, not
+   * something to undo back past into whatever was open before it loaded. */
+  | { type: "LOAD_WAYPOINTS"; waypoints: LngLat[]; mode: RoutingMode };
 
 export const initialRouteEditorState: RouteEditorState = {
   waypoints: [],
@@ -68,6 +72,8 @@ export function routeReducer(state: RouteEditorState, action: RouteAction): Rout
     }
     case "SET_MODE":
       return { ...state, mode: action.mode };
+    case "LOAD_WAYPOINTS":
+      return { ...state, waypoints: action.waypoints, mode: action.mode, isEditing: false, past: [], future: [] };
     case "CLEAR":
       return withHistory(state, []);
     case "UNDO": {

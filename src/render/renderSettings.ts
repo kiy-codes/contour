@@ -41,10 +41,19 @@ export interface RenderSettings {
 
 export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   pixelRatio: 2,
-  maxZoomLevelsOnScreen: 12,
-  tileCountMaxMinRatio: 6,
-  terrainMaxZoomLevelsOnScreen: 20,
-  terrainTileCountMaxMinRatio: 2,
+  // Visual (texture) quality: pushed way up. 2D panning is confirmed smooth
+  // with no terrain mesh involved at all, so the raster/vector tile pipeline
+  // itself isn't the performance cost — only the terrain geometry below is.
+  // Slower decay (lower maxZoomLevelsOnScreen) and a much higher tile budget
+  // keep imagery sharp far further out.
+  maxZoomLevelsOnScreen: 8,
+  tileCountMaxMinRatio: 24,
+  // Geometry (terrain mesh) cost: pushed even further down than before —
+  // this is the one number that actually controls 3D triangle throughput
+  // (see MapCanvas's terrain LOD effect), fully decoupled from the visual
+  // pair above.
+  terrainMaxZoomLevelsOnScreen: 26,
+  terrainTileCountMaxMinRatio: 1,
 };
 
 /** Guards against a stored value (or a typed-in one) that would make the map

@@ -24,6 +24,14 @@ export interface GeolocationFix {
   point: LngLat;
   /** Meters, as reported by the platform location provider. */
   accuracy: number;
+  /** Degrees clockwise from true north, GPS course-over-ground — null when
+   * the platform can't determine it (device stationary, or a network/Wi-Fi
+   * position with no velocity data at all, the common case on desktop).
+   * This is NOT a compass/magnetometer reading — no such API is wired up in
+   * this app — so it only means anything while actually moving. */
+  heading: number | null;
+  /** Meters/second ground speed, same availability caveats as heading. */
+  speed: number | null;
 }
 
 export interface GeolocationState {
@@ -53,6 +61,23 @@ const WATCH_OPTIONS = {
   enableHighAccuracy: false,
   timeout: 15000,
   maximumAge: 5000,
+};
+
+// Used while navigation mode is active. On Android, this plugin feeds
+// `timeout` directly into LocationRequest.Builder(timeout) as the UPDATE
+// INTERVAL, not a max-wait value (confirmed in the plugin's own Kotlin
+// source) — so this is really "how often", not "how long to wait". 2s is
+// fast enough to feel live on foot without being a wasteful poll rate.
+// enableHighAccuracy: true asks Android for PRIORITY_HIGH_ACCURACY (real GPS
+// hardware, which exists there) — worth requesting for live tracking, unlike
+// the default watch above. Harmless on desktop: per the Geolocation spec,
+// enableHighAccuracy only ever asks the platform to prefer better hardware
+// if it exists; a typical desktop's network/Wi-Fi position source is
+// unaffected either way.
+const HIGH_FREQUENCY_WATCH_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 2000,
+  maximumAge: 1000,
 };
 
 function describeError(err: GeolocationPositionError): { status: GeolocationStatus; message: string } {
@@ -96,13 +121,27 @@ function describeAndroidError(message: string | undefined): { status: Geolocatio
   return { status: "error", message: text || "Couldn't get your location." };
 }
 
+export interface UseGeolocationOptions {
+  /** True while navigation mode is active — switches from the default slow,
+   * low-power watch to HIGH_FREQUENCY_WATCH_OPTIONS. Flipping this while
+   * already watching restarts the watch with the new cadence; it does not
+   * itself start/stop watching. */
+  highFrequency?: boolean;
+}
+
 /** Local-only — nothing here ever transmits or stores the position beyond
  * this hook's own React state. */
-export function useGeolocation(): GeolocationState {
+export function useGeolocation(options?: UseGeolocationOptions): GeolocationState {
+  const highFrequency = options?.highFrequency ?? false;
   const [status, setStatus] = useState<GeolocationStatus>("idle");
   const [position, setPosition] = useState<GeolocationFix | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
+  // Read inside enable()/enableAndroid() without needing them in those
+  // callbacks' own dependency arrays — avoids recreating (and so restarting
+  // the watch via useEffect's `enable` dependency) on every render.
+  const highFrequencyRef = useRef(highFrequency);
+  highFrequencyRef.current = highFrequency;
 
   const clearActiveWatch = useCallback(() => {
     if (watchIdRef.current !== null) {
@@ -130,7 +169,8 @@ export function useGeolocation(): GeolocationState {
         setErrorMessage("Location permission was denied. Allow it in Android Settings → Apps → Contour → Permissions → Location.");
         return;
       }
-      const id = await androidGeolocation.watchPosition(WATCH_OPTIONS, (location, error) => {
+      const watchOptions = highFrequencyRef.current ? HIGH_FREQUENCY_WATCH_OPTIONS : WATCH_OPTIONS;
+      const id = await androidGeolocation.watchPosition(watchOptions, (location, error) => {
         if (error || !location) {
           const { status: nextStatus, message } = describeAndroidError(error);
           setStatus(nextStatus);
@@ -143,6 +183,8 @@ export function useGeolocation(): GeolocationState {
         setPosition({
           point: { lng: location.coords.longitude, lat: location.coords.latitude },
           accuracy: location.coords.accuracy,
+          heading: location.coords.heading,
+          speed: location.coords.speed,
         });
       });
       watchIdRef.current = id;
@@ -174,6 +216,8 @@ export function useGeolocation(): GeolocationState {
         setPosition({
           point: { lng: pos.coords.longitude, lat: pos.coords.latitude },
           accuracy: pos.coords.accuracy,
+          heading: pos.coords.heading,
+          speed: pos.coords.speed,
         });
       },
       (err) => {
@@ -182,9 +226,19 @@ export function useGeolocation(): GeolocationState {
         setErrorMessage(message);
         setPosition(null);
       },
-      WATCH_OPTIONS,
+      highFrequencyRef.current ? HIGH_FREQUENCY_WATCH_OPTIONS : WATCH_OPTIONS,
     );
   }, [clearActiveWatch, enableAndroid]);
+
+  // Restart an already-active watch when navigation mode flips the cadence.
+  // Guarded so this never fires on mount (status starts "idle") — only on a
+  // genuine highFrequency change while already watching.
+  useEffect(() => {
+    if (status === "active" || status === "locating") {
+      enable();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highFrequency]);
 
   // Belt-and-braces: stop watching on unmount regardless of whether
   // disable() was ever called explicitly.

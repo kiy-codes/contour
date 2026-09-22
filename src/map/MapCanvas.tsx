@@ -27,6 +27,8 @@ import { registerTileCacheProtocol, withCacheScheme, CACHE_SCHEME } from "../cac
 import { isAndroid } from "../platform";
 import type { Bbox } from "../offline/regionTiles";
 import { DEFAULT_RENDER_SETTINGS, effectivePixelRatio, type RenderSettings } from "../render/renderSettings";
+import { applyTileZoomHysteresis } from "./tileZoomHysteresis";
+import type { RouteProgress } from "../geo/routeProgress";
 import { circleRing, pathLength } from "../geo/distance";
 import { polygonAreaSqMeters } from "../geo/area";
 import type { WeatherMapLayerId } from "../providers/WeatherProvider";
@@ -61,7 +63,51 @@ const DEM_SOURCE_ID = "terrain-dem";
 // exactly the near-field blur we're fixing. Performance mode used to lower
 // it, and so made the blur worse.
 const PERFORMANCE_ZOOM_LEVELS_BONUS = 4;
+// How far a tile's raw calculateTileZoom result must move before a
+// zoom-selection change is actually allowed through — see
+// tileZoomHysteresis.ts. Below this, flicker right at an integer-zoom
+// boundary is suppressed instead of hard-swapping the tile every frame.
+const TILE_ZOOM_HYSTERESIS_MARGIN = 0.4;
 const HILLSHADE_LAYER_ID = "hillshade-layer";
+
+// The zoom-keyed fade curve hillshade-exaggeration used to be a static style
+// expression on ["zoom"] alone — see addTerrainLayers below for why it fades
+// at all (the DEM's real z15 ceiling banding once magnified). But zoom isn't
+// the only thing that magnifies the same DEM texture in screen space: a
+// steep pitch does too, spreading the near-field ground over far more
+// screen pixels than a top-down view at the same zoom would, for the same
+// optical reason a road looks far more "zoomed in" at the horizon of a
+// steep 3D view than a flat one. A style expression can't read pitch (no
+// ["pitch"] expression exists), so this curve is now evaluated and applied
+// imperatively — see the effect below that calls this on every camera move.
+const HILLSHADE_EXAGGERATION_STOPS: [zoom: number, exaggeration: number][] = [
+  [13, 0.5],
+  [15, 0.4],
+  [17, 0.15],
+  [19, 0.02],
+];
+
+function interpolateLinear(x: number, stops: [number, number][]): number {
+  if (x <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    const [prevX, prevY] = stops[i - 1];
+    const [nextX, nextY] = stops[i];
+    if (x <= nextX) return prevY + ((x - prevX) / (nextX - prevX)) * (nextY - prevY);
+  }
+  return stops[stops.length - 1][1];
+}
+
+/** 1/cos(pitch) is the grazing-angle magnification factor for a ground
+ * plane viewed from pitch degrees off top-down — log2 of that converts it
+ * into "how many extra zoom levels of magnification this pitch is worth",
+ * so it can feed the same curve real zoom already does. Clamped short of
+ * 90° (where it diverges) even though maxPitch is 80 — cheap insurance
+ * against a future maxPitch change rather than a bound expected to bite. */
+function computeHillshadeExaggeration(zoom: number, pitchDegrees: number): number {
+  const clampedPitchRadians = (Math.min(pitchDegrees, 89) * Math.PI) / 180;
+  const effectiveZoom = zoom + Math.log2(1 / Math.cos(clampedPitchRadians));
+  return interpolateLinear(effectiveZoom, HILLSHADE_EXAGGERATION_STOPS);
+}
 const SATELLITE_SOURCE_ID = "satellite-source";
 const SATELLITE_LAYER_ID = "satellite-layer";
 const SATELLITE_GAP_FILL_LAYER_ID = "satellite-gap-fill-layer";
@@ -88,7 +134,7 @@ export interface MapCanvasHandle {
   /** Shows/hides the GPS position marker + accuracy circle (src/geo/
    * useGeolocation.ts). Entirely separate from showHoverMarker and from
    * route waypoints — its own marker instance and its own map source. */
-  showUserLocationMarker(fix: { point: LngLat; accuracy: number } | null): void;
+  showUserLocationMarker(fix: { point: LngLat; accuracy: number; heading?: number | null } | null): void;
   /** Current map center, or null before the map has finished loading. */
   getCenter(): LngLat | null;
   /** Forces a fresh avalanche.org fetch, bypassing the in-memory cache. */
@@ -137,6 +183,10 @@ export interface MapCanvasProps {
   onSkiRunClick?: (run: SkiRun) => void;
   onSkiLiftClick?: (lift: SkiLift) => void;
   onRouteComputed?: (result: RouteResult | null, error: string | null) => void;
+  /** Live navigation progress along the currently-displayed route, or null
+   * when not navigating — draws the traveled-portion overlay on the route
+   * line (see useRouteLayer). */
+  navigationProgress?: RouteProgress | null;
   /** When true, drag-select on the map draws a rectangle instead of
    * panning — used to define an offline download region (see
    * src/offline/). Pan/rotate are restored automatically when this goes
@@ -189,15 +239,10 @@ function addTerrainLayers(map: MapLibreMap) {
         layout: { visibility: "none" },
         paint: {
           "hillshade-shadow-color": "#3b2f1f",
-          // Fades out well past the DEM's real maxzoom (15) — hillshade
-          // computes per-pixel shading from the heightmap texture, and
-          // magnifying that texture far beyond its native resolution turns
-          // each source pixel's shading into a visible flat-shaded "step",
-          // which reads as banding/terracing once you're zoomed in close.
-          // The terrain displacement mesh itself holds up fine that close
-          // (confirmed visually); it's specifically this paint layer's
-          // shading computation that needed to back off.
-          "hillshade-exaggeration": ["interpolate", ["linear"], ["zoom"], 13, 0.5, 15, 0.4, 17, 0.15, 19, 0.02],
+          // Placeholder — overwritten immediately by the pitch-aware effect
+          // below, which sets this imperatively instead of as a static
+          // zoom-keyed expression (see updateHillshadeExaggeration).
+          "hillshade-exaggeration": 0.4,
         },
       },
       firstSymbolId,
@@ -279,6 +324,7 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       routeState,
       routeDispatch,
       importedRoute = null,
+      navigationProgress = null,
       onElevationHover,
       onSkiRunClick,
       onSkiLiftClick,
@@ -460,17 +506,60 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           // (rendered separately by useRouteLayer) — this one is a solid
           // blue dot with a white ring, the conventional "you are here"
           // look, so it's never mistaken for either.
+          //
+          // A heading cone is layered behind the dot for navigation mode —
+          // a small rotated CSS-triangle wedge pointing in the GPS
+          // course-over-ground direction, matching the familiar
+          // "blue dot with a direction cone" look. It's built once and just
+          // shown/hidden + rotated on each update below, rather than
+          // swapping marker elements, since heading can flip between a real
+          // value and null (stationary) fix to fix.
           const el = document.createElement("div");
+          el.style.position = "relative";
           el.style.width = "16px";
           el.style.height = "16px";
-          el.style.borderRadius = "50%";
-          el.style.background = "#2563eb";
-          el.style.border = "3px solid #ffffff";
-          el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.5)";
           el.style.pointerEvents = "none";
+
+          const cone = document.createElement("div");
+          cone.className = "user-location-heading-cone";
+          cone.style.position = "absolute";
+          cone.style.left = "50%";
+          cone.style.top = "50%";
+          cone.style.width = "0";
+          cone.style.height = "0";
+          cone.style.borderLeft = "9px solid transparent";
+          cone.style.borderRight = "9px solid transparent";
+          cone.style.borderBottom = "22px solid rgba(37, 99, 235, 0.35)";
+          // Anchored so the wide end sits at the dot and it points outward;
+          // rotation origin at that anchor point, not the shape's own center.
+          cone.style.transformOrigin = "50% 22px";
+          cone.style.marginLeft = "-9px";
+          cone.style.marginTop = "-22px";
+          cone.style.display = "none";
+          el.appendChild(cone);
+
+          const dot = document.createElement("div");
+          dot.style.position = "absolute";
+          dot.style.inset = "0";
+          dot.style.borderRadius = "50%";
+          dot.style.background = "#2563eb";
+          dot.style.border = "3px solid #ffffff";
+          dot.style.boxShadow = "0 1px 4px rgba(0,0,0,0.5)";
+          el.appendChild(dot);
+
           userLocationMarkerRef.current = new maplibregl.Marker({ element: el }).setLngLat([fix.point.lng, fix.point.lat]).addTo(map);
         } else {
           userLocationMarkerRef.current.setLngLat([fix.point.lng, fix.point.lat]);
+        }
+
+        const cone = userLocationMarkerRef.current.getElement().querySelector<HTMLDivElement>(".user-location-heading-cone");
+        if (cone) {
+          if (fix.heading !== null && Number.isFinite(fix.heading)) {
+            cone.style.display = "block";
+            cone.style.transform = `rotate(${fix.heading}deg)`;
+          } else {
+            cone.style.display = "none";
+          }
         }
       },
     }));
@@ -532,6 +621,7 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       outdoorProvider,
       onRouteComputed ?? (() => {}),
       importedRoute,
+      navigationProgress,
     );
 
     useEffect(() => {
@@ -562,7 +652,14 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           // offscreen pass, which is exactly where multisampling costs the
           // most. At this DPR the difference is close to invisible on a
           // phone, so Android trades it away; desktop keeps it.
-          canvasContextAttributes: { antialias: !isAndroid },
+          // Explicitly request the fast GPU. On a hybrid-graphics desktop
+          // (discrete + integrated), an unpinned WebGL context can silently
+          // land on the weak integrated GPU — nothing else in this app or
+          // the OS pins it, confirmed live (no Windows per-app GPU
+          // preference override existed for this app, no forced
+          // software-rendering flags anywhere). A no-op on Android (one SoC
+          // GPU, nothing to select between).
+          canvasContextAttributes: { antialias: !isAndroid, powerPreference: "high-performance" },
           attributionControl: false,
           // Canvas resolution multiplier. Defaults below devicePixelRatio
           // (2.81 on the test phone) because fragment cost scales with its
@@ -608,14 +705,24 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
             "horizon-color": "#7fa8c9",
             "fog-color": "#cfe3f2",
             "sky-horizon-blend": 0.6,
-            // These two used to be 0.5/0.4 — high enough that fog visibly
-            // washed out distant terrain at any zoom (unlike atmosphere-blend
-            // below, they aren't zoom-scaled, so they applied just as
-            // strongly zoomed into a mountain as zoomed out to the globe).
-            // Lowered so the horizon still reads as atmosphere/haze rather
-            // than a wall that hides distant peaks.
             "horizon-fog-blend": 0.15,
-            "fog-ground-blend": 0.1,
+            // This is NOT "how much fog" — it's "how close to the camera the
+            // fog starts" (0 = starts at the camera, 1 = starts right at the
+            // horizon). Counterintuitively, LOWERING it makes fog worse: with
+            // 3D terrain on, MapLibre's terrain shader (terrain.fragment.glsl)
+            // runs a real depth-based fog pass keyed off true 3D distance to
+            // camera — separate from, and not disableable via, anything else
+            // in this object. Its intensity is hardcoded to pitch (0 below
+            // pitch 60°, ramping to full by 70°, terrain.ts's
+            // calculateFogBlendOpacity) with no public override, so at this
+            // app's pitch range (up to 80°) it always runs at full strength.
+            // The only real lever is pushing its start-distance out near the
+            // horizon, which is what raising this does — confirmed live: 0.4
+            // washed out most of the visible distance in a wall of haze
+            // (worse, not better, at 0.1); 0.92 leaves a real, sharp, distant
+            // view with only a thin atmospheric fade right at the true
+            // horizon.
+            "fog-ground-blend": 0.92,
             "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 12, 0],
           } as maplibregl.SkySpecification);
           addTerrainLayers(map);
@@ -704,6 +811,11 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       // Google Earth look — needs both high.
       const maxZoomLevelsOnScreen = renderSettings.maxZoomLevelsOnScreen + (performanceMode ? PERFORMANCE_ZOOM_LEVELS_BONUS : 0);
       mapReady.setSourceTileLodParams(maxZoomLevelsOnScreen, renderSettings.tileCountMaxMinRatio);
+      // Damps flicker at zoom-selection boundaries — see tileZoomHysteresis.ts
+      // for why this can't be fixed inside MapLibre itself. Applied to every
+      // source right after the plain curve above sets it, same unscoped vs
+      // scoped pattern as setSourceTileLodParams.
+      applyTileZoomHysteresis(mapReady, TILE_ZOOM_HYSTERESIS_MARGIN);
 
       // Overwrite the DEM source with its own, much steeper curve. MapLibre's
       // terrain mesh is a fixed-size grid reused for every tile regardless of
@@ -719,7 +831,37 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       // the imagery on top of it looks.
       const terrainMaxZoomLevelsOnScreen = renderSettings.terrainMaxZoomLevelsOnScreen + (performanceMode ? PERFORMANCE_ZOOM_LEVELS_BONUS : 0);
       mapReady.setSourceTileLodParams(terrainMaxZoomLevelsOnScreen, renderSettings.terrainTileCountMaxMinRatio, DEM_SOURCE_ID);
+      // A slightly wider margin than the visual sources: a DEM zoom swap
+      // changes mesh tile count (the actual triangle-throughput cost), not
+      // just texture sharpness, so it's worth holding steady a bit longer.
+      applyTileZoomHysteresis(mapReady, TILE_ZOOM_HYSTERESIS_MARGIN + 0.1, DEM_SOURCE_ID);
     }, [terrainEnabled, terrainExaggeration, performanceMode, renderSettings, mapReady]);
+
+    // Keeps hillshade-exaggeration matched to the *effective* zoom (real
+    // zoom plus how much the current pitch is magnifying the ground), not
+    // just real zoom — see computeHillshadeExaggeration above. rAF-throttled
+    // since "move" fires continuously through a drag/pitch gesture and this
+    // recomputes on every one of those, unlike the static expression it
+    // replaced which MapLibre's own paint pipeline evaluated for free.
+    useEffect(() => {
+      if (!mapReady) return;
+      const map = mapReady;
+      let rafId: number | null = null;
+      const applyExaggeration = () => {
+        rafId = null;
+        if (!map.getLayer(HILLSHADE_LAYER_ID)) return;
+        map.setPaintProperty(HILLSHADE_LAYER_ID, "hillshade-exaggeration", computeHillshadeExaggeration(map.getZoom(), map.getPitch()));
+      };
+      const scheduleApply = () => {
+        if (rafId === null) rafId = requestAnimationFrame(applyExaggeration);
+      };
+      scheduleApply();
+      map.on("move", scheduleApply);
+      return () => {
+        map.off("move", scheduleApply);
+        if (rafId !== null) cancelAnimationFrame(rafId);
+      };
+    }, [mapReady]);
 
     useEffect(() => {
       if (!mapReady) return;

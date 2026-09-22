@@ -1,0 +1,185 @@
+.saved-routes-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: sheet-backdrop-in 0.2s var(--ease-glass);
+}
+
+@keyframes sheet-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.saved-routes-panel {
+  width: min(480px, calc(100vw - 40px));
+  max-height: min(600px, calc(100vh - 80px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: var(--glass-radius);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  color: var(--text-primary);
+  text-shadow: var(--panel-text-shadow);
+  padding: 16px 18px;
+  animation: pop-in 0.25s var(--ease-glass);
+}
+
+.saved-routes-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.saved-routes-panel__close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.3em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.saved-routes-panel__close:hover {
+  color: var(--text-primary);
+}
+
+.saved-routes-panel__search {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.85em;
+  font-family: inherit;
+}
+
+.saved-routes-panel__search::placeholder {
+  color: var(--text-muted);
+}
+
+.saved-routes-panel__empty {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  padding: 12px 0;
+}
+
+.saved-routes-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.saved-routes-panel__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--glass-radius-sm);
+  background: var(--ui-fill);
+  border: 1px solid var(--glass-border);
+}
+
+.saved-routes-panel__row--pinned {
+  border-color: rgba(120, 170, 255, 0.5);
+  background: rgba(70, 130, 240, 0.1);
+}
+
+.saved-routes-panel__row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.saved-routes-panel__name {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.88em;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-routes-panel__name-input {
+  flex: 1;
+  background: var(--ui-fill-hover);
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.88em;
+}
+
+.saved-routes-panel__icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9em;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.saved-routes-panel__icon-btn:hover {
+  color: var(--text-primary);
+}
+
+.saved-routes-panel__icon-btn--active {
+  color: rgba(70, 130, 240, 0.95);
+}
+
+.saved-routes-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.72em;
+  color: var(--text-secondary);
+}
+
+.saved-routes-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saved-routes-panel__actions button:not(.saved-routes-panel__icon-btn) {
+  flex: 1;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-size: 0.76em;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.saved-routes-panel__actions button:not(.saved-routes-panel__icon-btn):hover {
+  background: var(--ui-fill-hover);
+}

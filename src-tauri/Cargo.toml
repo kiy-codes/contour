@@ -25,4 +25,15 @@ tauri-plugin-dialog = "2"
 tauri-plugin-geolocation = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Only for fetch_with_origin_header (see lib.rs) — the JS-side plugin-http
+# fetch() builds its headers via a browser Request/Headers object, which
+# silently drops the forbidden "Origin" header name before the request ever
+# reaches Rust (confirmed live: Android's WebView does this even though
+# desktop's WebView2 doesn't, which is why the ski-tile origin spoof in
+# tileCacheProtocol.ts worked on desktop but not Android). A direct reqwest
+# call has no such restriction. default-features off + rustls-tls to reuse
+# the same pure-Rust TLS stack tauri-plugin-http already pulls in, rather
+# than adding a second (native-tls/OpenSSL) one that Android cross-compiles
+# poorly.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 

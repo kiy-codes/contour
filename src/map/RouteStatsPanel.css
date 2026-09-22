@@ -87,6 +87,42 @@
   margin-top: 2px;
 }
 
+.route-stats-panel__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.route-stats-panel__navigate {
+  border: 1px solid var(--ui-border);
+  background: rgba(37, 99, 235, 0.85);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 6px 20px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.route-stats-panel__navigate:hover {
+  background: rgba(37, 99, 235, 1);
+}
+
+.route-stats-panel__save {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-fill);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 6px 20px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.route-stats-panel__save:hover {
+  background: var(--ui-fill-hover);
+}
+
 .route-stats-panel__breakdown {
   display: flex;
   flex-direction: column;
@@ -120,6 +156,15 @@
   height: 9px;
   border-radius: 2px;
   display: inline-block;
+}
+
+.route-stats-panel__elevation summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.78em;
+  color: var(--text-secondary);
+  outline: none;
+  margin-bottom: 4px;
 }
 
 .route-stats-panel__analysis {

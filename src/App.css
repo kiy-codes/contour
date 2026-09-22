@@ -346,7 +346,12 @@ body,
      emulator screenshot, not assumed. */
   top: 194px;
   right: 16px;
-  z-index: 15;
+  /* Higher than the location/region-draw slots below (both z-index 15):
+     this slot renders first in the DOM, so on a tied z-index the settings
+     dropdown — which pops open downward, over both of those — would lose
+     the stacking tie-break to whichever of them comes later in the DOM and
+     render underneath its own open panel. */
+  z-index: 16;
 }
 
 .mobile-location-slot {

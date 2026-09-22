@@ -44,6 +44,13 @@
 
 .search-bar__input-row input {
   flex: 1;
+  /* Flex items default to min-width:auto, which for a text input is its
+     content's intrinsic width — without this it refuses to shrink below
+     that and overflows the row instead of truncating (seen with a long
+     selected place name filling the box after picking a search result). */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: none;
   background: transparent;
   outline: none;

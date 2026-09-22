@@ -1,4 +1,5 @@
 import * as maplibregl from "maplibre-gl";
+import { invoke } from "@tauri-apps/api/core";
 import { cacheGetBytes, cachePutBytes } from "./persistentCache";
 
 export const CACHE_SCHEME = "wmcache";
@@ -48,6 +49,56 @@ function releaseFetchSlot() {
   if (next) next();
 }
 
+// OpenSkiMap's tile CDN (Cloudflare) serves a near-empty placeholder tile
+// (~193 bytes vs a real tile's tens of KB) for requests carrying an Origin
+// header it doesn't recognise — confirmed directly against their live
+// endpoint: no Origin, or Tauri's own app origin, both get the placeholder;
+// a browser-typical Origin (their own domain, or any plain "http://
+// localhost:<port>") gets the real tile every time. access-control-allow-
+// origin on their response is "*", so this isn't a CORS/security boundary
+// being crossed — it reads as an anti-hotlink/bandwidth heuristic that
+// wasn't written with a shipped app's non-browser origin in mind, not an
+// access restriction we're bypassing.
+//
+// A page's own fetch() cannot set Origin itself — it's on the Fetch spec's
+// forbidden-header list and the browser silently drops it. @tauri-apps/
+// plugin-http's fetch() *can* on desktop (its header list is built from a
+// bare Headers object, not tied to a spec-compliant Request there) — but on
+// Android its underlying Request/Headers construction enforces the
+// forbidden-name list anyway, silently dropping Origin before the request
+// reaches Rust at all. Confirmed on-device: status 200, but the exact
+// ~193-byte placeholder every time despite the header being set in JS. See
+// fetch_with_origin_header in src-tauri/src/lib.rs for the platform-
+// independent fix — a raw reqwest call, no browser header object involved.
+// Every other tile host keeps using plain fetch() unchanged.
+const ORIGIN_SPOOF_HOSTS: Record<string, string> = {
+  "tiles.openskimap.org": "http://localhost",
+};
+
+// The Cloudflare placeholder this host serves when it doesn't like the
+// Origin header is ~193 bytes. A real tile over a run/lift-free area (most
+// of the world, since this is opt-in and only fetched at all once the ski
+// layer is on) can still be a genuinely tiny near-empty MVT payload, so this
+// stays close to the known placeholder size rather than a round "small tile"
+// number — enough margin to catch the placeholder, not so much that a
+// legitimately sparse real tile gets misclassified as one.
+const MIN_PLAUSIBLE_TILE_BYTES = 250;
+
+async function fetchTileBytes(url: string, signal: AbortSignal): Promise<Response> {
+  const spoofOrigin = ORIGIN_SPOOF_HOSTS[new URL(url).hostname];
+  if (spoofOrigin) {
+    // No AbortSignal plumbing into the Rust side here — these requests are
+    // short (single tile), and acquireFetchSlot already bounds how many run
+    // at once, so a panned-away abort just means the result gets discarded
+    // when it lands rather than being cancelled mid-flight. Not worth a
+    // cancellable-command mechanism for that.
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    const bytes = await invoke<number[]>("fetch_with_origin_header", { url, origin: spoofOrigin });
+    return new Response(new Uint8Array(bytes));
+  }
+  return fetch(url, { signal });
+}
+
 /** Registers a MapLibre custom protocol that transparently persists
  * whatever it fetches through the app's IndexedDB tile cache (see
  * persistentCache.ts), keyed by the real URL. A tile source opts in by
@@ -74,9 +125,20 @@ export function registerTileCacheProtocol() {
     } else {
       await acquireFetchSlot(abortController.signal);
       try {
-        const response = await fetch(realUrl, { signal: abortController.signal });
+        const response = await fetchTileBytes(realUrl, abortController.signal);
         if (!response.ok) throw new Error(`Tile fetch failed: ${response.status} ${realUrl}`);
         buffer = await response.arrayBuffer();
+        // Belt-and-suspenders against the anti-hotlink placeholder Origin-
+        // spoofed hosts (see ORIGIN_SPOOF_HOSTS above) serve when a spoof
+        // doesn't take: still 200 OK, so the check above doesn't catch it.
+        // Silently caching that as "the tile" would permanently poison this
+        // URL's cache entry with an empty result, so treat implausibly small
+        // bytes from these hosts as a failure instead — MapLibre retries a
+        // failed tile on the next viewport change; a cached one it never
+        // retries.
+        if (ORIGIN_SPOOF_HOSTS[new URL(realUrl).hostname] && buffer.byteLength < MIN_PLAUSIBLE_TILE_BYTES) {
+          throw new Error(`Suspiciously small tile (${buffer.byteLength}B, Origin spoof likely rejected): ${realUrl}`);
+        }
         // The buffer we return below is transferred (not copied) to MapLibre's
         // tile worker, detaching it here — so the cache must get its own copy,
         // made now while the original is still attached. Fire-and-forget: the

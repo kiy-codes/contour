@@ -205,7 +205,17 @@ async function evictToFit(db: IDBDatabase, totalBytes: number, maxBytes: number)
   }
 }
 
-const inflightReads = new Map<string, Promise<{ bytes: Uint8Array; contentType: string | null } | null>>();
+// Resolves to the RAW deserialized entry — never exposed to callers directly.
+// Every caller of cacheGetBytes (the one that populates this and every one
+// that piggybacks on it) must slice() its own copy before returning. Promise
+// resolution hands the exact same object to every awaiter; if cacheGetBytes
+// returned that object's buffer straight through, two concurrent callers for
+// the same key (confirmed to happen: a DEM tile is requested by both the
+// terrain mesh and the hillshade layer from the same source) would get the
+// SAME ArrayBuffer — and the first one to have it transferred to a MapLibre
+// worker detaches it out from under the second, throwing a DataCloneError
+// (confirmed live: "ArrayBuffer at index 0 is already detached").
+const inflightReads = new Map<string, Promise<{ buffer: ArrayBuffer; contentType: string | null } | null>>();
 
 /** Reads a cached entry's raw bytes. Returns null on a miss, and also null
  * (never throws) if IndexedDB is unavailable for some reason, so callers can
@@ -214,41 +224,41 @@ const inflightReads = new Map<string, Promise<{ bytes: Uint8Array; contentType: 
  *
  * Checks the in-memory cache first (memoryCache.ts) — zero IndexedDB work on
  * a hit, which is most of them once an area has been visited once. On a
- * miss there, concurrent calls for the same key (confirmed to happen: a DEM
- * tile is requested by both the terrain mesh and the hillshade layer from
- * the same source) share one IndexedDB read via `inflightReads` rather than
- * each opening their own transaction. The transaction itself is readonly —
- * it used to be "readwrite" so it could touch `lastAccessed` on every hit,
- * which meant rewriting the entire record (bytes included) just to bump a
- * timestamp: a full flash write on every cache *read*. That touch is
- * dropped entirely for now (disk LRU degrades to FIFO-by-write-time until a
- * future schema restores real atime tracking — acceptable at a cap this
- * rarely fires eviction). */
+ * miss there, concurrent calls for the same key share one IndexedDB read via
+ * `inflightReads` rather than each opening their own transaction. The
+ * transaction itself is readonly — it used to be "readwrite" so it could
+ * touch `lastAccessed` on every hit, which meant rewriting the entire record
+ * (bytes included) just to bump a timestamp: a full flash write on every
+ * cache *read*. That touch is dropped entirely for now (disk LRU degrades to
+ * FIFO-by-write-time until a future schema restores real atime tracking —
+ * acceptable at a cap this rarely fires eviction). */
 export async function cacheGetBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string | null } | null> {
   const hot = memGet(key);
   if (hot) return hot;
 
-  const inflight = inflightReads.get(key);
-  if (inflight) return inflight;
+  let shared = inflightReads.get(key);
+  if (!shared) {
+    shared = (async () => {
+      try {
+        const db = await openDb();
+        const tx = db.transaction(STORE, "readonly");
+        const entry = (await reqToPromise(tx.objectStore(STORE).get(key))) as CacheEntry | undefined;
+        if (!entry) return null;
+        return { buffer: entry.bytes, contentType: entry.contentType };
+      } catch {
+        return null;
+      } finally {
+        inflightReads.delete(key);
+      }
+    })();
+    inflightReads.set(key, shared);
+  }
 
-  const promise = (async () => {
-    try {
-      const db = await openDb();
-      const tx = db.transaction(STORE, "readonly");
-      const entry = (await reqToPromise(tx.objectStore(STORE).get(key))) as CacheEntry | undefined;
-      if (!entry) return null;
-      // memPut takes ownership of the buffer — hand it a copy, since `entry`
-      // (and the ArrayBuffer inside it) is also about to be returned below.
-      memPut(key, entry.bytes.slice(0), entry.contentType);
-      return { bytes: new Uint8Array(entry.bytes), contentType: entry.contentType };
-    } catch {
-      return null;
-    } finally {
-      inflightReads.delete(key);
-    }
-  })();
-  inflightReads.set(key, promise);
-  return promise;
+  const result = await shared;
+  if (!result) return null;
+  // Independent copy per caller — see the detachment note above.
+  memPut(key, result.buffer.slice(0), result.contentType);
+  return { bytes: new Uint8Array(result.buffer.slice(0)), contentType: result.contentType };
 }
 
 /** Checks whether a key is already cached without touching lastAccessed or

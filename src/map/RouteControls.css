@@ -115,6 +115,17 @@
   cursor: not-allowed;
 }
 
+.route-controls__row button.route-controls__navigate {
+  background: rgba(37, 99, 235, 0.85);
+  border-color: rgba(120, 170, 255, 0.6);
+  color: #fff;
+  font-weight: 600;
+}
+
+.route-controls__row button.route-controls__navigate:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 1);
+}
+
 /* Mobile: a FAB instead of a floating top-right box for starting a route,
    and a full-width bottom bar instead of a floating panel while editing —
    the floating panel covered most of a phone screen. */
